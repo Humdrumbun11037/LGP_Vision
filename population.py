@@ -206,6 +206,7 @@ class Population:
     # Evaluation
 
     def evaluate_all(self, evaluator: 'FitnessEvaluator', verbose: bool = False) -> None:
+        
         for idx, individual in enumerate(self.individuals):
             individual.evaluate(evaluator)
             if verbose and (idx + 1) % 10 == 0:

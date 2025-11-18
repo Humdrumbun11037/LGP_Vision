@@ -29,7 +29,7 @@ class Instruction:
         inputs = []
         for src_type, src_idx in zip(self.source_types,self.source_indices):
             if src_idx < 0:
-                obs_idx = abs(src_idx) - 1
+                obs_idx = abs(src_idx) - 1 # - 1 to ensure the 0 value can be obtained - 
                 if src_type == MemoryType.SCALAR:
                     inputs.append(float(memory.obs_scalars[obs_idx%memory.n_obs_scalar])) # wrap around babyyyyy
                 elif src_type == MemoryType.VECTOR:

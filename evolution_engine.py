@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
 
 import numpy as np
 
@@ -29,6 +29,16 @@ class EvolutionConfig:
             raise ValueError("constant_mutation_rate must be within [0, 1]")
 
 
+@dataclass
+class BestAgentInfo:
+    """Information about the best agent in a generation."""
+    generation: int
+    fitness: float
+    effective_code_rate: float  # effective_length / total_length
+    total_length: int
+    effective_length: int
+
+
 class EvolutionEngine:
     """Coordinates evaluation, selection, and variation."""
 
@@ -45,6 +55,8 @@ class EvolutionEngine:
         self.evaluator = evaluator
         self.config = config
         self.rng = rng or np.random.default_rng()
+        # Track best agent info per generation
+        self.best_agent_history: List[BestAgentInfo] = []
 
     def run(self) -> Population:
         for gen in range(self.config.max_generations):
@@ -54,6 +66,9 @@ class EvolutionEngine:
                 individual.program = original_program
 
             self.population.record_statistics()
+            
+            # Track best agent of this generation
+            self._record_best_agent(gen)
 
             if self.config.verbose:
                 print(f"\n=== Generation {gen} ===")
@@ -99,6 +114,39 @@ class EvolutionEngine:
             restored.append((individual, individual.program))
             individual.program = pruned
         return restored
+
+    def _record_best_agent(self, generation: int) -> None:
+        """Record information about the best agent in the current generation."""
+        best_agent = self.population.get_best()
+        
+        if best_agent.fitness is None:
+            return  # Skip if not evaluated
+        
+        # Get output registers from evaluator
+        output_registers = getattr(self.evaluator, "output_registers", None)
+        if output_registers is None:
+            # If no output registers specified, assume all code is effective
+            effective_length = len(best_agent.program)
+            effective_code_rate = 1.0
+        else:
+            # Calculate effective code metrics
+            effective_length = best_agent.program.get_effective_length(output_registers)
+            total_length = len(best_agent.program)
+            effective_code_rate = effective_length / total_length if total_length > 0 else 0.0
+        
+        info = BestAgentInfo(
+            generation=generation,
+            fitness=best_agent.fitness,
+            effective_code_rate=effective_code_rate,
+            total_length=len(best_agent.program),
+            effective_length=effective_length,
+        )
+        self.best_agent_history.append(info)
+        
+        if self.config.verbose:
+            print(f"Best agent: fitness={info.fitness:.4f}, "
+                  f"effective_code_rate={info.effective_code_rate:.3f} "
+                  f"({info.effective_length}/{info.total_length})")
 
 
 if __name__ == "__main__":
