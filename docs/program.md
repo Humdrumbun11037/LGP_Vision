@@ -114,57 +114,43 @@ program_copy = program.copy()
 
 **Introns** are instructions that don't affect the program's output. They are "dead code" that can be safely removed without changing program behavior.
 
-The intron removal system uses **backward dependency analysis**:
-1. Start with output registers
-2. Find instructions that write to those registers
-3. For each effective instruction, find what it reads
-4. Recursively trace back to find all dependencies
+The intron removal system uses a **simplified backward pass algorithm**:
+1. Start with output registers in a set
+2. Traverse instructions from back to front
+3. If an instruction writes to a register in the set, mark it as effective
+4. Remove the written register from the set and add the instruction's source registers
+5. Continue until all dependencies are traced
+
+This algorithm is more efficient than previous implementations, requiring only a single backward pass with simple set operations.
 
 ### Key Methods
 
-#### `find_effective_instructions(output_registers: List[Tuple[MemoryType, int]]) -> Set[int]`
+#### `intron_removal(output_registers: List[Tuple[MemoryType, int]]) -> None`
 
-Find which instructions actually affect the output.
+Remove introns **in-place** by modifying the program's instruction list.
 
 **Parameters:**
 - `output_registers`: List of `(MemoryType, index)` tuples specifying output registers
 
-**Returns:**
-- `Set[int]`: Set of instruction indices that are effective (non-introns)
+**Behavior:**
+- **Modifies the program in-place** - the original instruction list is replaced
+- Uses a simple backward pass algorithm
+- Maintains instruction order (only removes introns)
+- More efficient than previous implementations
 
-**Algorithm:**
-- Uses backward dependency analysis
-- Tracks which instruction reads each register
-- Finds the last writer **before** the instruction that reads it
-- Recursively traces dependencies
-
-**Example:**
-```python
-# Find effective instructions assuming output is in scalar[9]
-output_regs = [(MemoryType.SCALAR, 9)]
-effective = program.find_effective_instructions(output_regs)
-print(effective)  # {0, 1, 2} for example
-```
-
-#### `get_introns(output_registers: List[Tuple[MemoryType, int]]) -> Set[int]`
-
-Get instruction indices that are introns (don't affect output).
-
-**Parameters:**
-- `output_registers`: List of output register specifications
-
-**Returns:**
-- `Set[int]`: Set of instruction indices that are introns
+**⚠️ Warning:** This method modifies the program. Use `remove_introns_create_copy()` if you need to preserve the original.
 
 **Example:**
 ```python
-introns = program.get_introns(output_regs)
-print(introns)  # {3, 4, 5} for example
+# Create a copy first if you want to preserve the original
+program_copy = program.copy()
+program_copy.intron_removal([(MemoryType.SCALAR, 9)])
+# program_copy now has introns removed
 ```
 
-#### `remove_introns(output_registers: List[Tuple[MemoryType, int]]) -> Program`
+#### `remove_introns_create_copy(output_registers: List[Tuple[MemoryType, int]]) -> Program`
 
-Create a new program with introns removed.
+Create a new program with introns removed (non-destructive).
 
 **Parameters:**
 - `output_registers`: List of output register specifications
@@ -174,46 +160,9 @@ Create a new program with introns removed.
 
 **Example:**
 ```python
-compact_program = program.remove_introns(output_regs)
-print(len(program))  # 10
+compact_program = program.remove_introns_create_copy([(MemoryType.SCALAR, 9)])
+print(len(program))  # 10 (original unchanged)
 print(len(compact_program))  # 5 (if 5 were introns)
-```
-
-#### `get_effective_length(output_registers: List[Tuple[MemoryType, int]]) -> int`
-
-Get the number of effective instructions.
-
-**Parameters:**
-- `output_registers`: List of output register specifications
-
-**Returns:**
-- `int`: Number of effective instructions
-
-**Use Cases:**
-- Fitness metrics (smaller effective programs are better)
-- Bloat control
-- Program analysis
-
-**Example:**
-```python
-effective_len = program.get_effective_length(output_regs)
-print(f"Effective length: {effective_len}/{len(program)}")
-```
-
-#### `get_intron_ratio(output_registers: List[Tuple[MemoryType, int]]) -> float`
-
-Get the ratio of intron instructions to total instructions.
-
-**Parameters:**
-- `output_registers`: List of output register specifications
-
-**Returns:**
-- `float`: Ratio in [0, 1] where 0 = no introns, 1 = all introns
-
-**Example:**
-```python
-ratio = program.get_intron_ratio(output_regs)
-print(f"Intron ratio: {ratio:.1%}")  # e.g., "50.0%"
 ```
 
 ---
@@ -366,41 +315,22 @@ instructions = [
 ]
 
 program = Program(instructions)
-
-# Find introns
 output_regs = [(MemoryType.SCALAR, 9)]
-effective = program.find_effective_instructions(output_regs)
-print(f"Effective: {effective}")  # {0, 1, 2}
 
-introns = program.get_introns(output_regs)
-print(f"Introns: {introns}")  # {3, 4}
+# Remove introns (non-destructive - creates a copy)
+compact = program.remove_introns_create_copy(output_regs)
+print(len(program))  # 5 (original unchanged)
+print(len(compact))  # 3 (introns removed)
 
-# Remove introns
-compact = program.remove_introns(output_regs)
-print(len(compact))  # 3
-
-# Get statistics
-print(f"Effective length: {program.get_effective_length(output_regs)}")
-print(f"Intron ratio: {program.get_intron_ratio(output_regs):.1%}")
+# Or remove in-place (modifies the program)
+program_copy = program.copy()
+program_copy.intron_removal(output_regs)
+print(len(program_copy))  # 3
 ```
 
 ### Program Analysis
 
-```python
-# Analyze program
-output_regs = [(MemoryType.SCALAR, 9)]
-
-# Get statistics
-effective_len = program.get_effective_length(output_regs)
-intron_ratio = program.get_intron_ratio(output_regs)
-
-print(f"Total instructions: {len(program)}")
-print(f"Effective instructions: {effective_len}")
-print(f"Intron ratio: {intron_ratio:.1%}")
-
-# Pretty print with intron marking
-print(program.to_string(output_regs, show_introns=True))
-```
+**Note:** For program analysis metrics like effective length and intron ratio, use the `Individual` class methods instead, which provide cached access to the effective program. See [Individual Documentation](individual.md) for details.
 
 ---
 
@@ -408,33 +338,44 @@ print(program.to_string(output_regs, show_introns=True))
 
 ### Intron Removal Algorithm
 
-The intron removal uses **backward dependency analysis**:
+The intron removal uses a **simplified backward pass algorithm** (based on Brameier & Banzhaf, 2001):
 
-1. **Write Map**: Pre-computes which instructions write to each register
-2. **Backward Tracing**: Starts from output registers and traces backwards
-3. **Reader Context**: Tracks which instruction reads each register to find the correct writer
-4. **Worklist Algorithm**: Uses a worklist to process all dependencies
+**Algorithm:**
+1. Initialize a set with output registers
+2. Traverse instructions from last to first
+3. For each instruction:
+   - If it writes to a register in the set:
+     - Mark instruction as effective
+     - Remove the written register from the set
+     - Add all source registers to the set
+4. Reverse the marked instructions to maintain order
 
-**Key Insight**: When tracing a register, we find the last writer **before** the instruction that reads it, not just the last writer before the end of the program. This correctly handles cases where registers are overwritten.
+**Key Advantages:**
+- **Single pass**: Only requires one backward traversal
+- **Simple**: Uses basic set operations, no complex data structures
+- **Efficient**: O(n) time complexity where n is the number of instructions
+- **Correct**: Naturally handles overwritten registers (last writer is found first)
 
 **Example:**
 ```
-Instruction 0: scalar[0] = obs[-1] + obs[-2]  (effective)
-Instruction 1: scalar[1] = scalar[0] * scalar[0]  (reads [0] at pos 1, effective)
-Instruction 2: scalar[0] = scalar[1] - scalar[1]  (overwrites [0] at pos 2)
-Instruction 3: scalar[9] = scalar[1] + scalar[1]  (output, effective)
+Instruction 0: scalar[0] = obs[-1] + obs[-2]  (effective - writes to needed register)
+Instruction 1: scalar[1] = scalar[0] * scalar[0]  (effective - writes to needed register)
+Instruction 2: scalar[0] = scalar[1] - scalar[1]  (intron - overwrites [0] but [0] not needed)
+Instruction 3: scalar[9] = scalar[1] + scalar[1]  (effective - output register)
 ```
 
-When tracing `scalar[1]` (read by instruction 3), we find instruction 1 writes it.
-When tracing `scalar[0]` (read by instruction 1), we find instruction 0 writes it (before instruction 1), not instruction 2.
+When processing backwards:
+- Start with `{scalar[9]}` in the set
+- Instruction 3 writes to `scalar[9]` → mark as effective, add `{scalar[1]}`
+- Instruction 2 writes to `scalar[0]` → not in set, skip
+- Instruction 1 writes to `scalar[1]` → mark as effective, add `{scalar[0]}`
+- Instruction 0 writes to `scalar[0]` → mark as effective
 
-### Multiple Output Registers
-
+**Multiple Output Registers:**
 The system supports multiple output registers. All dependencies leading to any output register are traced, making all relevant instructions effective.
 
-### Overwritten Registers
-
-The algorithm correctly handles registers that are overwritten multiple times by tracking which instruction reads each register and finding the writer before that specific reader.
+**Overwritten Registers:**
+The algorithm correctly handles registers that are overwritten multiple times. By processing backwards, the last writer (which is encountered first) is naturally selected.
 
 ---
 

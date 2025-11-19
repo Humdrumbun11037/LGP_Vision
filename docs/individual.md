@@ -12,11 +12,13 @@
 
 | Attribute | Type | Description |
 |-----------|------|-------------|
-| `program` | `Program` | Executable LGP program |
+| `program` | `Program` | Executable LGP program (full program with all instructions) |
 | `memory` | `MemoryBank` | Working/evolutionary registers |
 | `fitness` | `Optional[float]` | Cached fitness value |
 | `age` | `int` | Generational age |
 | `parent_ids` | `Tuple[int, ...]` | Lineage tracking |
+| `_effective_program` | `Optional[Program]` | Cached intron-removed program (internal, lazy-computed) |
+| `_output_registers` | `Optional[List[Tuple[MemoryType, int]]]` | Cached output registers used for effective program (internal) |
 
 ## Factory Method
 
@@ -45,7 +47,79 @@ This keeps population initialization concise and makes it easy to spawn reproduc
 ## Evaluation Helpers
 
 - `evaluate(evaluator)` defers to any `FitnessEvaluator` implementation.
-- `invalidate_fitness()` clears the cached score when the individual mutates.
+- `invalidate_fitness()` clears the cached score and effective program cache when the individual mutates.
+
+## Intron Removal and Effective Program
+
+### `get_effective_program(output_registers: List[Tuple[MemoryType, int]]) -> Program`
+
+Get the intron-removed (effective) program, computing lazily if needed.
+
+**Parameters:**
+- `output_registers`: List of `(MemoryType, index)` tuples specifying output registers
+
+**Returns:**
+- `Program`: Program with only effective instructions (introns removed)
+
+**Behavior:**
+- **Lazy computation**: The effective program is computed on first call and cached
+- **Cache invalidation**: Cache is cleared when `invalidate_fitness()` is called
+- **Efficient**: Subsequent calls with the same `output_registers` return the cached program
+- **Task-specific**: Different output registers result in different effective programs
+
+**Example:**
+```python
+# Get effective program for a specific output register
+output_regs = [(MemoryType.SCALAR, 9)]
+effective = individual.get_effective_program(output_regs)
+
+# Execute the effective program (faster - no introns)
+memory = individual.memory.copy()
+memory.load_observation({'scalar': [1.0, 2.0]})
+effective.execute(memory)
+```
+
+**Important:** The effective program uses the same memory interface as the original program. It doesn't have its own memory - you pass memory to it at execution time.
+
+### `get_effective_length(output_registers: List[Tuple[MemoryType, int]]) -> int`
+
+Get the number of effective instructions (intron-removed program length).
+
+**Parameters:**
+- `output_registers`: List of output register specifications
+
+**Returns:**
+- `int`: Number of effective instructions
+
+**Use Cases:**
+- Fitness metrics (smaller effective programs are better)
+- Bloat control
+- Program analysis
+
+**Example:**
+```python
+output_regs = [(MemoryType.SCALAR, 9)]
+effective_len = individual.get_effective_length(output_regs)
+total_len = len(individual.program)
+print(f"Effective: {effective_len}/{total_len}")
+```
+
+### `get_intron_ratio(output_registers: List[Tuple[MemoryType, int]]) -> float`
+
+Get the ratio of intron instructions to total instructions.
+
+**Parameters:**
+- `output_registers`: List of output register specifications
+
+**Returns:**
+- `float`: Ratio in [0, 1] where 0 = no introns, 1 = all introns
+
+**Example:**
+```python
+output_regs = [(MemoryType.SCALAR, 9)]
+ratio = individual.get_intron_ratio(output_regs)
+print(f"Intron ratio: {ratio:.1%}")  # e.g., "40.0%"
+```
 
 ## Copying and Offspring
 

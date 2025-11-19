@@ -1,8 +1,8 @@
 from dataclasses import dataclass, field
-from typing import Optional, Tuple, Dict, TYPE_CHECKING
+from typing import Optional, Tuple, Dict, List, TYPE_CHECKING
 import itertools
 import numpy as np
-from memory_system import MemoryBank, MemoryConfig
+from memory_system import MemoryBank, MemoryConfig, MemoryType
 from program import Program
 from instruction_set import InstructionSet
 from operators import GeneticOperators
@@ -22,7 +22,20 @@ class Individual:
     fitness: Optional[float] = None
     age: int = 0
     parent_ids: Tuple[int, ...] = ()
-    
+    # Internal cache fields (not in __init__)
+    _effective_program: Optional[Program] = field(default=None, init=False)
+    _output_registers: Optional[List[Tuple[MemoryType, int]]] = field(default=None, init=False)
+
+    def get_effective_program(self, output_registers: List[Tuple[MemoryType, int]]) -> Program:
+        """Get intron-removed program, computing lazily if needed."""
+        # Check if cache is valid
+        if (self._effective_program is None or 
+            self._output_registers != output_registers):
+            # Cache invalid - recompute
+            self._effective_program = self.program.copy()
+            self._effective_program.intron_removal(output_registers)
+            self._output_registers = output_registers
+        return self._effective_program
     def evaluate(self, evaluator: 'FitnessEvaluator') -> float:
         """Evaluate fitness using given evaluator"""
         if self.fitness is None:
@@ -32,6 +45,10 @@ class Individual:
     def invalidate_fitness(self):
         """Mark fitness as needing re-evaluation"""
         self.fitness = None
+        
+        # Also clear effective program cache when program might have changed
+        self._effective_program = None
+        self._output_registers = None
     
     def copy(self, new_id: bool = True) -> 'Individual':
         """
@@ -60,13 +77,26 @@ class Individual:
         offspring.invalidate_fitness()
         return offspring
     
-    def get_effective_length(self, output_registers) -> int:
-        """Get effective program length (for parsimony)"""
-        return self.program.get_effective_length(output_registers)
+    def get_effective_length(self, output_registers: List[Tuple[MemoryType, int]]) -> int:
+        """Get effective program length (for parsimony)."""
+        effective_program = self.get_effective_program(output_registers)
+        return len(effective_program)
     
     def get_constants(self) -> Dict:
         """Get evolvable constants (for analysis)"""
         return self.memory.get_constants()
+    def get_intron_ratio(self, output_registers: List[Tuple[MemoryType, int]]) -> float:
+        """Get the ratio of intron instructions to total instructions.
+        
+        Returns:
+            Float in [0, 1] where 0 = no introns, 1 = all introns
+        """
+        total = len(self.program)
+        if total == 0:
+            return 0.0
+        effective = self.get_effective_length(output_registers)
+        return 1.0 - (effective / total)
+    
 
     @classmethod
     def random(
@@ -104,51 +134,23 @@ class Individual:
         return f"Individual(id={self.id}, fitness={fitness_str}, len={len(self.program)}, age={self.age})"
 
 
-if __name__ == "__main__":
-    from operation import ALL_OPS
-
-    rng = np.random.default_rng(123)
-
-    memory_cfg = MemoryConfig(
-        n_scalar=4,
-        n_vector=2,
-        n_matrix=1,
-        n_obs_scalar=2,
-        n_obs_vector=1,
-        n_obs_matrix=0,
-        vector_size=3,
-        matrix_shape=(2, 2),
-    )
-
-    from instruction_set import InstructionSet
-    from memory_system import MemoryBank
-
-    template_memory = MemoryBank(
-        n_scalar=memory_cfg.n_scalar,
-        n_vector=memory_cfg.n_vector,
-        n_matrix=memory_cfg.n_matrix,
-        n_obs_scalar=memory_cfg.n_obs_scalar,
-        n_obs_vector=memory_cfg.n_obs_vector,
-        n_obs_matrix=memory_cfg.n_obs_matrix,
-        vector_size=memory_cfg.vector_size,
-        matrix_shape=memory_cfg.matrix_shape,
-    )
-
-    instr_set = InstructionSet([op() for op in ALL_OPS], template_memory)
-
-    ind = Individual.random(
-        instruction_set=instr_set,
-        memory_config=memory_cfg,
-        program_length=5,
-        rng=rng,
-        mutate_constants=True,
-    )
-
-    print("Generated Individual:", ind)
-    print("Program instructions:")
-    for idx, instr in enumerate(ind.program.instructions):
-        print(f"  {idx}: {instr}")
-
-    print("\nInitial scalar registers:", ind.memory.scalars)
-    print("Initial vector registers:\n", ind.memory.vectors)
-    print("Initial matrix registers:\n", ind.memory.matrices)
+# Methods to move 
+    # def get_effective_length(self, output_registers: List[Tuple[MemoryType, int]]) -> int:
+    #     """
+    #     Get the number of effective instructions.
+        
+    #     Useful for fitness metrics and bloat control.
+    #     """
+    #     return len(self.find_effective_instructions(output_registers))
+    
+    # def get_intron_ratio(self, output_registers: List[Tuple[MemoryType, int]]) -> float:
+    #     """
+    #     Get the ratio of intron instructions to total instructions.
+        
+    #     Returns:
+    #         Float in [0, 1] where 0 = no introns, 1 = all introns
+    #     """
+    #     if len(self.instructions) == 0:
+    #         return 0.0
+    #     introns = self.get_introns(output_registers)
+    #     return len(introns) / len(self.instructions)

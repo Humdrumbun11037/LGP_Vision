@@ -15,6 +15,13 @@ try:
 except ImportError:
     ndimage = None
 
+SAFE_FLOAT_RANGE = 1e6
+
+
+def _clip_array(arr: np.ndarray, limit: float = SAFE_FLOAT_RANGE) -> np.ndarray:
+    """Clamp array values to a safe float range to avoid overflow."""
+    return np.clip(arr, -limit, limit)
+
 class Operation(ABC):
     """Abstract class for all operations 
     Each operations know its input and output types and how to execute it"""
@@ -832,6 +839,9 @@ class AutoMLScalarSinOp(Operation):
         return MemoryType.SCALAR
     
     def execute(self, a: float) -> float:
+        # Handle NaN and infinity inputs
+        if not np.isfinite(a):
+            return 0.0
         return float(np.sin(a))
     
     @property
@@ -852,6 +862,9 @@ class AutoMLScalarCosOp(Operation):
         return MemoryType.SCALAR
     
     def execute(self, a: float) -> float:
+        # Handle NaN and infinity inputs
+        if not np.isfinite(a):
+            return 0.0
         return float(np.cos(a))
     
     @property
@@ -872,6 +885,9 @@ class AutoMLScalarTanOp(Operation):
         return MemoryType.SCALAR
     
     def execute(self, a: float) -> float:
+        # Handle NaN and infinity inputs
+        if not np.isfinite(a):
+            return 0.0
         return float(np.tan(a))
     
     @property
@@ -957,7 +973,11 @@ class AutoMLScalarExpOp(Operation):
         return MemoryType.SCALAR
     
     def execute(self, a: float) -> float:
-        return float(np.exp(a))
+        # Clamp input to prevent overflow: exp(700) ≈ 1e304, exp(709) overflows
+        if not np.isfinite(a):
+            return 0.0
+        a_clamped = np.clip(a, -700.0, 700.0)
+        return float(np.exp(a_clamped))
     
     @property
     def name(self) -> str:
@@ -1063,7 +1083,12 @@ class AutoMLScalarVectorMulOp(Operation):
         return MemoryType.VECTOR
     
     def execute(self, s: float, v: np.ndarray) -> np.ndarray:
-        return (s * v).astype(np.float32)
+        if not np.isfinite(s):
+            s = 0.0
+        s = float(np.clip(s, -SAFE_FLOAT_RANGE, SAFE_FLOAT_RANGE))
+        v = _clip_array(v)
+        result = (s * v).astype(np.float32)
+        return _clip_array(result)
     
     @property
     def name(self) -> str:
@@ -1170,7 +1195,10 @@ class AutoMLVectorAddOp(Operation):
         return MemoryType.VECTOR
     
     def execute(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
-        return (a + b).astype(np.float32)
+        a = _clip_array(a)
+        b = _clip_array(b)
+        result = (a + b).astype(np.float32)
+        return _clip_array(result)
     
     @property
     def name(self) -> str:
@@ -1190,7 +1218,10 @@ class AutoMLVectorSubOp(Operation):
         return MemoryType.VECTOR
     
     def execute(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
-        return (a - b).astype(np.float32)
+        a = _clip_array(a)
+        b = _clip_array(b)
+        result = (a - b).astype(np.float32)
+        return _clip_array(result)
     
     @property
     def name(self) -> str:
@@ -1210,7 +1241,10 @@ class AutoMLVectorMulOp(Operation):
         return MemoryType.VECTOR
     
     def execute(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
-        return (a * b).astype(np.float32)
+        a = _clip_array(a)
+        b = _clip_array(b)
+        result = (a * b).astype(np.float32)
+        return _clip_array(result)
     
     @property
     def name(self) -> str:
@@ -1231,9 +1265,13 @@ class AutoMLVectorDivOp(Operation):
     
     def execute(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
         # Prevent divide-by-zero - return 0 if denominator is zero
+        a = _clip_array(a)
+        b = _clip_array(b)
         result = np.zeros_like(a, dtype=np.float32)
         mask = np.abs(b) >= 1e-8
-        result[mask] = a[mask] / b[mask]
+        if np.any(mask):
+            safe_vals = (a[mask] / b[mask]).astype(np.float32)
+            result[mask] = _clip_array(safe_vals)
         return result
     
     @property
@@ -1547,7 +1585,13 @@ class AutoMLMatrixMulOp(Operation):
         return MemoryType.MATRIX
     
     def execute(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
-        return (a * b).astype(np.float32)
+        # Clamp inputs to prevent overflow
+        a = np.clip(a, -1e10, 1e10)
+        b = np.clip(b, -1e10, 1e10)
+        result = (a * b).astype(np.float32)
+        # Clamp result to prevent overflow
+        result = np.clip(result, -1e10, 1e10)
+        return result
     
     @property
     def name(self) -> str:
@@ -1568,9 +1612,13 @@ class AutoMLMatrixDivOp(Operation):
     
     def execute(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
         # Prevent divide-by-zero - return 0 if denominator is zero
+        a = _clip_array(a)
+        b = _clip_array(b)
         result = np.zeros_like(a, dtype=np.float32)
         mask = np.abs(b) >= 1e-8
-        result[mask] = a[mask] / b[mask]
+        if np.any(mask):
+            safe_vals = (a[mask] / b[mask]).astype(np.float32)
+            result[mask] = _clip_array(safe_vals)
         return result
     
     @property
@@ -1591,7 +1639,13 @@ class AutoMLMatrixMatmulOp(Operation):
         return MemoryType.MATRIX
     
     def execute(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
-        return np.matmul(a, b).astype(np.float32)
+        # Clamp inputs to prevent overflow
+        a = np.clip(a, -1e10, 1e10)
+        b = np.clip(b, -1e10, 1e10)
+        result = np.matmul(a, b).astype(np.float32)
+        # Clamp result to prevent overflow
+        result = np.clip(result, -1e10, 1e10)
+        return result
     
     @property
     def name(self) -> str:
@@ -1876,8 +1930,11 @@ class AutoMLVectorElementConstantOp(Operation):
     def execute(self, v: np.ndarray, idx: float, gamma: float) -> np.ndarray:
         # Copy before modify
         result = v.copy()
-        # Modulo wrapping for index
-        idx_int = int(idx) % len(result)
+        # Modulo wrapping for index - handle NaN/infinity
+        if not np.isfinite(idx):
+            idx_int = 0  # Default to first element if invalid
+        else:
+            idx_int = int(idx) % len(result)
         result[idx_int] = gamma
         return result.astype(np.float32)
     
@@ -1901,9 +1958,15 @@ class AutoMLMatrixElementConstantOp(Operation):
     def execute(self, m: np.ndarray, row: float, col: float, gamma: float) -> np.ndarray:
         # Copy before modify
         result = m.copy()
-        # Modulo wrapping for both indices
-        row_int = int(row) % result.shape[0]
-        col_int = int(col) % result.shape[1]
+        # Modulo wrapping for both indices - handle NaN/infinity
+        if not np.isfinite(row):
+            row_int = 0  # Default to first row if invalid
+        else:
+            row_int = int(row) % result.shape[0]
+        if not np.isfinite(col):
+            col_int = 0  # Default to first column if invalid
+        else:
+            col_int = int(col) % result.shape[1]
         result[row_int, col_int] = gamma
         return result.astype(np.float32)
     
@@ -2244,6 +2307,9 @@ def _normalize_to_uint8(matrix: np.ndarray) -> np.ndarray:
     # Normalize to [0, 255] range
     min_val = matrix.min()
     max_val = matrix.max()
+    # Check for invalid values
+    if not np.isfinite(min_val) or not np.isfinite(max_val):
+        return np.full_like(matrix, 128, dtype=np.uint8)
     if abs(max_val - min_val) < 1e-8:
         return np.full_like(matrix, 128, dtype=np.uint8)
     normalized = ((matrix - min_val) / (max_val - min_val) * 255.0).clip(0, 255)
@@ -2433,6 +2499,49 @@ class CVGaussianBlurOp(Operation):
     @property
     def name(self) -> str:
         return "cv_gaussian_blur"
+    
+    @property
+    def differentiable(self) -> bool:
+        return False  # Discrete operation
+
+class CVResizeOp(Operation):
+    """resize: Resize image to specified dimensions"""
+    def input_types(self) -> List[MemoryType]:
+        return [MemoryType.MATRIX, MemoryType.SCALAR, MemoryType.SCALAR]
+    
+    def output_type(self) -> MemoryType:
+        return MemoryType.MATRIX
+    
+    def execute(self, m: np.ndarray, width: float, height: float) -> np.ndarray:
+        if cv2 is None:
+            raise ImportError("OpenCV (cv2) is required for CV operations")
+        if m.size == 0:
+            return m.astype(np.float32)
+        
+        # Convert to uint8
+        img_uint8 = _normalize_to_uint8(m)
+        
+        # Ensure positive dimensions
+        target_w = _safe_int(width, min_val=1, max_val=1000)
+        target_h = _safe_int(height, min_val=1, max_val=1000)
+        
+        # Resize using INTER_AREA for downsampling, INTER_LINEAR for upsampling
+        current_h, current_w = img_uint8.shape
+        if target_w < current_w or target_h < current_h:
+            # Downsampling: use INTER_AREA (best quality for downsampling)
+            interpolation = cv2.INTER_AREA
+        else:
+            # Upsampling: use INTER_LINEAR (faster than INTER_CUBIC)
+            interpolation = cv2.INTER_LINEAR
+        
+        resized = cv2.resize(img_uint8, (target_w, target_h), interpolation=interpolation)
+        
+        # Convert back to float32
+        return _normalize_from_uint8(resized)
+    
+    @property
+    def name(self) -> str:
+        return "cv_resize"
     
     @property
     def differentiable(self) -> bool:
@@ -2794,6 +2903,7 @@ CV_EDGE_DETECTION_OPS = [
 # CV Filtering Operations
 CV_FILTERING_OPS = [
     CVGaussianBlurOp,
+    CVResizeOp,
 ]
 
 # CV Segmentation Operations

@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Optional, List, Tuple
 
 import numpy as np
-
+from scipy.special import expit
 
 import gymnasium as gym  # type: ignore[import]
 
@@ -119,8 +119,7 @@ class CartPoleEvaluator(FitnessEvaluator):
 
         for _ in range(self.max_steps): # stateful registers 
             memory.load_observation({'scalar': observation.tolist()})
-
-            individual.program.execute(memory)
+            individual.get_effective_program(self.output_registers).execute(memory)
 
             action_value = memory.read_scalar(self.output_register)
             action = 1 if action_value >= 0.0 else 0
@@ -152,18 +151,14 @@ class FlappyBirdEvaluator(FitnessEvaluator):
         output_register: int = 7,
         render_mode: Optional[str] = None,
         rng: Optional[np.random.Generator] = None,
-        # Patch extraction parameters (can be evolved in future)
-        patch_size: int = 72,
-        num_patches: int = 8,
-        patch_strategy: str = "grid",  # "grid", "overlapping", "random", "strategic", "full", "full_image"
-        # Note: For "full" strategy, patch_size determines the number of patches:
-        #       pads image to square, then grid_size = padded_size / patch_size,
-        #       resulting in grid_size² patches. num_patches is ignored for "full".
+        # Image processing parameters
+        patch_strategy: str = "full_image",  # "full_image" or "quantized"
         # Note: For "full_image" strategy, returns a single 700x700 observation:
         #       crops to 700x576 (removes top/bottom 50px), pads to 700x700 (62px each side).
-        #       patch_size and num_patches are ignored for "full_image".
+        # Note: For "quantized" strategy, pads image to 800x800 first, then downsamples using quantization_factor.
         color_channel: int = 1,  # 0=R, 1=G, 2=B, or -1 for grayscale (mean)
         normalize: bool = True,  # Normalize to [0, 1]
+        quantization_factor: float = 0.5,  # Factor to downsample by (0.5 = half resolution). Only used for "quantized" strategy.
     ) -> None:
         if gym is None:
             raise ImportError("gymnasium is required for FlappyBirdEvaluator")
@@ -183,12 +178,11 @@ class FlappyBirdEvaluator(FitnessEvaluator):
         self.env_id = env_id
         self.render_mode = render_mode
         
-        # Patch extraction configuration (evolvable parameters)
-        self.patch_size = patch_size
-        self.num_patches = num_patches
+        # Image processing configuration
         self.patch_strategy = patch_strategy
         self.color_channel = color_channel
         self.normalize = normalize
+        self.quantization_factor = quantization_factor
 
     def close(self) -> None:
         if hasattr(self, "env") and self.env is not None:
@@ -221,113 +215,6 @@ class FlappyBirdEvaluator(FitnessEvaluator):
         
         return channel
 
-    def _resize_patch(self, patch: np.ndarray) -> np.ndarray:
-        """Resize patch to configured patch_size."""
-        target = self.patch_size
-        if patch.shape == (target, target):
-            return patch.astype(np.float32, copy=False)
-
-        try:
-            from scipy.ndimage import zoom
-
-            zoom_factor = target / patch.shape[0], target / patch.shape[1]
-            resized = zoom(patch, zoom_factor, order=1).astype(np.float32)
-        except ImportError:
-            # Nearest-neighbor fallback using numpy indexing
-            src_h, src_w = patch.shape
-            y_idx = np.linspace(0, max(src_h - 1, 0), target).astype(int)
-            x_idx = np.linspace(0, max(src_w - 1, 0), target).astype(int)
-            resized = patch[np.ix_(y_idx, x_idx)].astype(np.float32)
-
-        return resized
-
-    def _pad_to_square(self, image: np.ndarray) -> np.ndarray:
-        """
-        Pad image to square by adding zero columns/rows to the smaller dimension.
-        
-        Args:
-            image: Single channel image array of shape (H, W)
-            
-        Returns:
-            Square image array of shape (max(H, W), max(H, W))
-        """
-        h, w = image.shape
-        max_dim = max(h, w)
-        
-        if h == w:
-            return image.astype(np.float32, copy=False)
-        
-        # Create square array filled with zeros
-        square_image = np.zeros((max_dim, max_dim), dtype=np.float32)
-        
-        if h < w:
-            # Image is wider than tall: pad top and bottom
-            pad_top = (max_dim - h) // 2
-            square_image[pad_top:pad_top + h, :] = image
-        else:
-            # Image is taller than wide: pad left and right
-            pad_left = (max_dim - w) // 2
-            square_image[:, pad_left:pad_left + w] = image
-        
-        return square_image
-
-    def _extract_full_coverage_patches(self, image: np.ndarray) -> List[np.ndarray]:
-        """
-        Extract patches using square grid strategy:
-        1. Pad image to square (using larger dimension)
-        2. Calculate grid_size = padded_size / patch_size
-        3. Extract grid_size × grid_size patches, each of size patch_size × patch_size
-        4. No resizing - patches are used at their natural size
-        1×1 → patches are 800×800 (1 patch)
-2×2 → patches are 400×400 (4 patches)
-4×4 → patches are 200×200 (16 patches)
-5×5 → patches are 160×160 (25 patches)
-8×8 → patches are 100×100 (64 patches)
-10×10 → patches are 80×80 (100 patches)
-16×16 → patches are 50×50 (256 patches)
-20×20 → patches are 40×40 (400 patches)
-25×25 → patches are 32×32 (625 patches)
-32×32 → patches are 25×25 (1024 patches)
-40×40 → patches are 20×20 (1600 patches)
-50×50 → patches are 16×16 (2500 patches)
-80×80 → patches are 10×10 (6400 patches)
-100×100 → patches are 8×8 (10000 patches)
-        
-        Args:
-            image: Single channel image array of shape (H, W)
-            
-        Returns:
-            List of patch matrices, each of shape (patch_size, patch_size)
-        """
-        # Pad to square
-        square_image = self._pad_to_square(image)
-        padded_size = square_image.shape[0]  # Height and width are the same
-        
-        # Calculate grid size
-        grid_size = padded_size // self.patch_size
-        
-        if grid_size == 0:
-            # If patch_size is larger than image, return single patch (padded if needed)
-            if padded_size < self.patch_size:
-                patch = np.zeros((self.patch_size, self.patch_size), dtype=np.float32)
-                patch[:padded_size, :padded_size] = square_image
-                return [patch]
-            else:
-                return [square_image[:self.patch_size, :self.patch_size].copy()]
-        
-        # Extract patches from grid
-        patches: List[np.ndarray] = []
-        for i in range(grid_size):
-            for j in range(grid_size):
-                y0 = i * self.patch_size
-                y1 = y0 + self.patch_size
-                x0 = j * self.patch_size
-                x1 = x0 + self.patch_size
-                patch = square_image[y0:y1, x0:x1].copy()
-                patches.append(patch)
-        
-        return patches
-
     def _extract_full_image(self, image: np.ndarray) -> List[np.ndarray]:
         """
         Extract a single full image observation:
@@ -358,135 +245,96 @@ class FlappyBirdEvaluator(FitnessEvaluator):
 
     def _extract_patches(self, image: np.ndarray) -> List[np.ndarray]:
         """
-        Extract patches from image based on configured strategy.
+        Process image based on configured strategy.
         
         Args:
             image: Single channel image array of shape (H, W)
             
         Returns:
-            List of patch matrices.
-            - For "full" strategy: number of patches is determined by patch_size
-              (grid_size² where grid_size = padded_size / patch_size).
-            - For "full_image" strategy: returns exactly 1 patch of shape (700, 700).
-            - For other strategies: returns exactly num_patches patches of shape (patch_size, patch_size).
+            List containing a single matrix:
+            - For "full_image" strategy: returns exactly 1 matrix of shape (700, 700).
+            - For "quantized" strategy: pads image to 800x800 first, then downsamples and returns as single matrix.
         """
-        h, w = image.shape
-        patch_size = self.patch_size
-        num_patches = self.num_patches
-        
-        patches = []
-        
-        if self.patch_strategy == "full":
-            # Full coverage strategy: number of patches is determined by patch_size
-            # Returns all patches generated (no truncation/padding to num_patches)
-            return self._extract_full_coverage_patches(image)
-        
         if self.patch_strategy == "full_image":
             # Full image strategy: crop to 700x576, pad to 700x700, return single observation
-            # Returns exactly 1 patch (the full 700x700 image)
+            # Returns exactly 1 matrix (the full 700x700 image)
             return self._extract_full_image(image)
 
-        if self.patch_strategy == "grid":
-            # Regular grid: divide image into grid and select patches
-            # Calculate grid dimensions
-            grid_h = int(np.sqrt(num_patches * (h / w)))  # Approximate square grid
-            grid_w = int(np.ceil(num_patches / grid_h))
+        elif self.patch_strategy == "quantized":
+            # Quantized strategy: pad to 800x800 first, then downsample
+            # This ensures consistent input size before quantization
+            try:
+                import cv2
+            except ImportError:
+                raise ImportError("OpenCV (cv2) is required for quantized strategy")
             
-            # Calculate step sizes
-            step_h = max(1, (h - patch_size) // max(1, grid_h - 1)) if grid_h > 1 else 0
-            step_w = max(1, (w - patch_size) // max(1, grid_w - 1)) if grid_w > 1 else 0
+            h, w = image.shape
             
-            # Extract patches from grid
-            for i in range(grid_h):
-                for j in range(grid_w):
-                    if len(patches) >= num_patches:
-                        break
-                    y = min(i * step_h, h - patch_size)
-                    x = min(j * step_w, w - patch_size)
-                    patch = image[y:y+patch_size, x:x+patch_size]
-                    patches.append(patch.copy())
-                if len(patches) >= num_patches:
-                    break
-        
-        elif self.patch_strategy == "overlapping":
-            # Overlapping patches: slide window across image
-            step = patch_size // 2  # 50% overlap
-            for y in range(0, h - patch_size + 1, step):
-                for x in range(0, w - patch_size + 1, step):
-                    if len(patches) >= num_patches:
-                        break
-                    patch = image[y:y+patch_size, x:x+patch_size]
-                    patches.append(patch.copy())
-                if len(patches) >= num_patches:
-                    break
-        
-        elif self.patch_strategy == "random":
-            # Random patches: sample random locations
-            for _ in range(num_patches):
-                y = self.rng.integers(0, max(1, h - patch_size + 1))
-                x = self.rng.integers(0, max(1, w - patch_size + 1))
-                patch = image[y:y+patch_size, x:x+patch_size]
-                patches.append(patch.copy())
-        
-        elif self.patch_strategy == "strategic":
-            # Strategic: focus on center region where bird/pipes typically are
-            # Center region: middle 60% of image
-            center_y_start = int(h * 0.2)
-            center_y_end = int(h * 0.8)
-            center_x_start = int(w * 0.2)
-            center_x_end = int(w * 0.8)
+            # Step 1: Pad image to 800x800 by adding zeros on each side
+            # Similar to full_image strategy but to 800x800 instead of 700x700
+            target_size = 800
+            padded = np.zeros((target_size, target_size), dtype=np.float32)
             
-            center_h = center_y_end - center_y_start
-            center_w = center_x_end - center_x_start
+            # Center the image in the padded array
+            pad_top = (target_size - h) // 2
+            pad_left = (target_size - w) // 2
+            padded[pad_top:pad_top + h, pad_left:pad_left + w] = image
             
-            # Grid within center region
-            grid_h = int(np.sqrt(num_patches * (center_h / center_w)))
-            grid_w = int(np.ceil(num_patches / grid_h))
+            # Step 2: Downsample the 800x800 padded image using quantization_factor
+            target_w = max(1, int(target_size * self.quantization_factor))
+            target_h = max(1, int(target_size * self.quantization_factor))
             
-            step_h = max(1, (center_h - patch_size) // max(1, grid_h - 1)) if grid_h > 1 else 0
-            step_w = max(1, (center_w - patch_size) // max(1, grid_w - 1)) if grid_w > 1 else 0
+            # Downsample using INTER_AREA interpolation (best for downsampling)
+            # Convert to uint8 for cv2.resize, then back to float32
+            if self.normalize:
+                # Image is already normalized [0, 1], convert to [0, 255] for cv2
+                padded_uint8 = (padded * 255.0).clip(0, 255).astype(np.uint8)
+            else:
+                # Image is [0, 255], just convert to uint8
+                padded_uint8 = padded.clip(0, 255).astype(np.uint8)
             
-            for i in range(grid_h):
-                for j in range(grid_w):
-                    if len(patches) >= num_patches:
-                        break
-                    y = center_y_start + min(i * step_h, center_h - patch_size)
-                    x = center_x_start + min(j * step_w, center_w - patch_size)
-                    patch = image[y:y+patch_size, x:x+patch_size]
-                    patches.append(patch.copy())
-                if len(patches) >= num_patches:
-                    break
+            downsampled_uint8 = cv2.resize(
+                padded_uint8,
+                (target_w, target_h),
+                interpolation=cv2.INTER_AREA
+            )
+            
+            # Convert back to float32
+            if self.normalize:
+                downsampled = downsampled_uint8.astype(np.float32) / 255.0
+            else:
+                downsampled = downsampled_uint8.astype(np.float32)
+            
+            # Return as single matrix
+            return [downsampled]
         
         else:
-            raise ValueError(f"Unknown patch_strategy: {self.patch_strategy}")
-        
-        # Ensure we have exactly num_patches (pad with zeros if needed)
-        while len(patches) < num_patches:
-            patches.append(np.zeros((patch_size, patch_size), dtype=np.float32))
-        
-        return patches[:num_patches]
+            raise ValueError(
+                f"Unknown patch_strategy: {self.patch_strategy}. "
+                f"Must be 'full_image' or 'quantized'"
+            )
 
     def _process_observation(self, observation: np.ndarray) -> List[np.ndarray]:
         """
-        Process the raw RGB observation into matrix patches for memory.
+        Process the raw RGB observation into matrix observations for memory.
         
-        This method extracts patches from the image based on configured parameters.
-        The parameters (patch_size, num_patches, strategy, etc.) can be evolved
-        in future implementations.
+        This method processes the image based on configured strategy.
         
         Args:
             observation: RGB image array of shape (800, 576, 3) with values 0-255
             
         Returns:
-            List of patch matrices, each of shape (patch_size, patch_size)
+            List containing a single matrix:
+            - For "full_image": shape (700, 700)
+            - For "quantized": shape depends on quantization_factor
         """
         # Step 1: Extract color channel
         single_channel = self._extract_color_channel(observation)
         
-        # Step 2: Extract patches based on strategy
-        patches = self._extract_patches(single_channel)
+        # Step 2: Process image based on strategy (returns list with single matrix)
+        matrix_observations = self._extract_patches(single_channel)
         
-        return patches
+        return matrix_observations
 
     def _evaluate_episode(self, individual: 'Individual', episode_idx: int) -> float:
         observation, _ = self.env.reset()
@@ -500,11 +348,15 @@ class FlappyBirdEvaluator(FitnessEvaluator):
             matrix_observations = self._process_observation(observation)
             memory.load_observation({'matrix': matrix_observations})
 
-            individual.program.execute(memory)
+            individual.get_effective_program(self.output_registers).execute(memory)
+
 
             # Read action from output register
             action_value = memory.read_scalar(self.output_register)
-            action = 1 if action_value >= 0.0 else 0
+            
+            normalized = expit(action_value)  # expit is the sigmoid function   
+            
+            action = 1 if normalized >= 0.5 else 0
 
             observation, reward, terminated, truncated, _ = self.env.step(action)
             observation = np.asarray(observation, dtype=np.float32)

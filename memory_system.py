@@ -264,7 +264,14 @@ class MemoryBank:
             >>> memory.write_scalar(100, 3.14)  # Wraps if n_scalar < 100
         """
         index = index % self.n_scalar
-        self.scalars[index] = value
+        # Clamp to reasonable range for float32 to prevent overflow
+        if not np.isfinite(value):
+            value = 0.0
+        else:
+            # float32 range: approximately [-3.4e38, 3.4e38]
+            # Use a safer range to prevent overflow
+            value = np.clip(value, -1e10, 1e10)
+        self.scalars[index] = float(value)
     
     def write_vector(self, index: int, value: np.ndarray) -> None:
         """

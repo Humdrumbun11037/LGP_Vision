@@ -132,31 +132,24 @@ class Population:
     def replace_population(self, new_individuals: List[Individual]) -> None:
         if len(new_individuals) != self.config.size:
             raise ValueError("New population size mismatch")
-
+        
         self.individuals = new_individuals
         if self.config.max_program_length is not None:
             for ind in self.individuals:
                 ind.program.max_program_length = self.config.max_program_length
         self.generation += 1
 
-        current_best = self.get_best()
-        if current_best.fitness is not None and (
-            self.best_ever is None or current_best.fitness > (self.best_ever.fitness or float("-inf"))
-        ):
-            self.best_ever = current_best.copy(new_id=False)
-            self.best_ever_generation = self.generation
-
-    def apply_elitism(self, offspring: List[Individual]) -> List[Individual]:
+ 
+    def get_elites(self) -> List[Individual]:
+        """Get elite individuals from current population."""
         if self.config.elitism == 0:
-            return offspring
-
+            return []
         elites = self.select_best(self.config.elitism)
-        remaining = sorted(
-            offspring,
-            key=lambda ind: ind.fitness or float("-inf"),
-            reverse=True,
-        )[: self.config.size - self.config.elitism]
-        return remaining + [elite.copy(new_id=False) for elite in elites]
+        # Optionally increment age if you want elites to age
+        for elite in elites:
+            elite.age += 1
+        return elites
+
 
     # ------------------------------------------------------------------
     # Metrics & utilities
