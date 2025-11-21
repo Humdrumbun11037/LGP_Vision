@@ -271,7 +271,12 @@ class VectorDotProductOp(Operation):
         return MemoryType.SCALAR
     
     def execute(self, a: np.ndarray, b: np.ndarray) -> float:
-        return float(np.dot(a, b))
+        a = _clip_array(a)
+        b = _clip_array(b)
+        result = np.dot(a, b)
+        if not np.isfinite(result):
+            result = 0.0
+        return float(result)
     
     @property
     def name(self) -> str:
@@ -291,7 +296,11 @@ class VectorMeanOp(Operation):
         return MemoryType.SCALAR
     
     def execute(self, v: np.ndarray) -> float:
-        return float(np.mean(v))
+        v = _clip_array(v)
+        result = np.mean(v)
+        if not np.isfinite(result):
+            result = 0.0
+        return float(result)
     
     @property
     def name(self) -> str:
@@ -351,7 +360,11 @@ class VectorSumOp(Operation):
         return MemoryType.SCALAR
     
     def execute(self, v: np.ndarray) -> float:
-        return float(np.sum(v))
+        v = _clip_array(v)
+        result = np.sum(v)
+        if not np.isfinite(result):
+            result = 0.0
+        return float(result)
     
     @property
     def name(self) -> str:
@@ -431,7 +444,13 @@ class MatrixMulOp(Operation):
         return MemoryType.MATRIX
     
     def execute(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
-        return np.matmul(a, b)
+        a = _clip_array(a)
+        b = _clip_array(b)
+        result = np.matmul(a, b)
+        result = _clip_array(result)
+        # Replace any NaN/inf with 0
+        result = np.nan_to_num(result, nan=0.0, posinf=SAFE_FLOAT_RANGE, neginf=-SAFE_FLOAT_RANGE)
+        return result
     
     @property
     def name(self) -> str:
@@ -451,7 +470,11 @@ class MatrixMeanOp(Operation):
         return MemoryType.SCALAR
     
     def execute(self, m: np.ndarray) -> float:
-        return float(np.mean(m))
+        m = _clip_array(m)
+        result = np.mean(m)
+        if not np.isfinite(result):
+            result = 0.0
+        return float(result)
     
     @property
     def name(self) -> str:
@@ -1155,7 +1178,11 @@ class AutoMLVectorNormOp(Operation):
         return MemoryType.SCALAR
     
     def execute(self, v: np.ndarray) -> float:
-        return float(np.linalg.norm(v))
+        v = _clip_array(v)
+        result = np.linalg.norm(v)
+        if not np.isfinite(result):
+            result = 0.0
+        return float(result)
     
     @property
     def name(self) -> str:
@@ -1221,7 +1248,9 @@ class AutoMLVectorSubOp(Operation):
         a = _clip_array(a)
         b = _clip_array(b)
         result = (a - b).astype(np.float32)
-        return _clip_array(result)
+        result = _clip_array(result)
+        result = np.nan_to_num(result, nan=0.0, posinf=SAFE_FLOAT_RANGE, neginf=-SAFE_FLOAT_RANGE)
+        return result
     
     @property
     def name(self) -> str:
@@ -1292,7 +1321,12 @@ class AutoMLVectorDotOp(Operation):
         return MemoryType.SCALAR
     
     def execute(self, a: np.ndarray, b: np.ndarray) -> float:
-        return float(np.dot(a, b))
+        a = _clip_array(a)
+        b = _clip_array(b)
+        result = np.dot(a, b)
+        if not np.isfinite(result):
+            result = 0.0
+        return float(result)
     
     @property
     def name(self) -> str:
@@ -1377,7 +1411,12 @@ class AutoMLMatrixVectorDotOp(Operation):
         return MemoryType.VECTOR
     
     def execute(self, m: np.ndarray, v: np.ndarray) -> np.ndarray:
-        return np.dot(m, v).astype(np.float32)
+        m = _clip_array(m)
+        v = _clip_array(v)
+        result = np.dot(m, v).astype(np.float32)
+        result = _clip_array(result)
+        result = np.nan_to_num(result, nan=0.0, posinf=SAFE_FLOAT_RANGE, neginf=-SAFE_FLOAT_RANGE)
+        return result
     
     @property
     def name(self) -> str:
@@ -1445,7 +1484,11 @@ class AutoMLMatrixNormOp(Operation):
         return MemoryType.SCALAR
     
     def execute(self, m: np.ndarray) -> float:
-        return float(np.linalg.norm(m))
+        m = _clip_array(m)
+        result = np.linalg.norm(m)
+        if not np.isfinite(result):
+            result = 0.0
+        return float(result)
     
     @property
     def name(self) -> str:
@@ -1465,7 +1508,11 @@ class AutoMLMatrixNormAxis0Op(Operation):
         return MemoryType.VECTOR
     
     def execute(self, m: np.ndarray) -> np.ndarray:
-        return np.linalg.norm(m, axis=0).astype(np.float32)
+        m = _clip_array(m)
+        result = np.linalg.norm(m, axis=0).astype(np.float32)
+        result = _clip_array(result)
+        result = np.nan_to_num(result, nan=0.0, posinf=SAFE_FLOAT_RANGE, neginf=-SAFE_FLOAT_RANGE)
+        return result
     
     @property
     def name(self) -> str:
@@ -1485,7 +1532,11 @@ class AutoMLMatrixNormAxis1Op(Operation):
         return MemoryType.VECTOR
     
     def execute(self, m: np.ndarray) -> np.ndarray:
-        return np.linalg.norm(m, axis=1).astype(np.float32)
+        m = _clip_array(m)
+        result = np.linalg.norm(m, axis=1).astype(np.float32)
+        result = _clip_array(result)
+        result = np.nan_to_num(result, nan=0.0, posinf=SAFE_FLOAT_RANGE, neginf=-SAFE_FLOAT_RANGE)
+        return result
     
     @property
     def name(self) -> str:
@@ -1565,7 +1616,12 @@ class AutoMLMatrixSubOp(Operation):
         return MemoryType.MATRIX
     
     def execute(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
-        return (a - b).astype(np.float32)
+        a = _clip_array(a)
+        b = _clip_array(b)
+        result = (a - b).astype(np.float32)
+        result = _clip_array(result)
+        result = np.nan_to_num(result, nan=0.0, posinf=SAFE_FLOAT_RANGE, neginf=-SAFE_FLOAT_RANGE)
+        return result
     
     @property
     def name(self) -> str:
@@ -1586,11 +1642,12 @@ class AutoMLMatrixMulOp(Operation):
     
     def execute(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
         # Clamp inputs to prevent overflow
-        a = np.clip(a, -1e10, 1e10)
-        b = np.clip(b, -1e10, 1e10)
+        a = _clip_array(a)
+        b = _clip_array(b)
         result = (a * b).astype(np.float32)
-        # Clamp result to prevent overflow
-        result = np.clip(result, -1e10, 1e10)
+        # Clamp result and handle NaN/inf
+        result = _clip_array(result)
+        result = np.nan_to_num(result, nan=0.0, posinf=SAFE_FLOAT_RANGE, neginf=-SAFE_FLOAT_RANGE)
         return result
     
     @property
@@ -1640,11 +1697,12 @@ class AutoMLMatrixMatmulOp(Operation):
     
     def execute(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
         # Clamp inputs to prevent overflow
-        a = np.clip(a, -1e10, 1e10)
-        b = np.clip(b, -1e10, 1e10)
+        a = _clip_array(a)
+        b = _clip_array(b)
         result = np.matmul(a, b).astype(np.float32)
-        # Clamp result to prevent overflow
-        result = np.clip(result, -1e10, 1e10)
+        # Clamp result and handle NaN/inf
+        result = _clip_array(result)
+        result = np.nan_to_num(result, nan=0.0, posinf=SAFE_FLOAT_RANGE, neginf=-SAFE_FLOAT_RANGE)
         return result
     
     @property
@@ -1787,7 +1845,11 @@ class AutoMLVectorMeanOp(Operation):
         return MemoryType.SCALAR
     
     def execute(self, v: np.ndarray) -> float:
-        return float(np.mean(v))
+        v = _clip_array(v)
+        result = np.mean(v)
+        if not np.isfinite(result):
+            result = 0.0
+        return float(result)
     
     @property
     def name(self) -> str:
@@ -1807,7 +1869,11 @@ class AutoMLMatrixMeanOp(Operation):
         return MemoryType.SCALAR
     
     def execute(self, m: np.ndarray) -> float:
-        return float(np.mean(m))
+        m = _clip_array(m)
+        result = np.mean(m)
+        if not np.isfinite(result):
+            result = 0.0
+        return float(result)
     
     @property
     def name(self) -> str:
@@ -1827,7 +1893,11 @@ class AutoMLMatrixMeanAxis0Op(Operation):
         return MemoryType.VECTOR
     
     def execute(self, m: np.ndarray) -> np.ndarray:
-        return np.mean(m, axis=0).astype(np.float32)
+        m = _clip_array(m)
+        result = np.mean(m, axis=0).astype(np.float32)
+        result = _clip_array(result)
+        result = np.nan_to_num(result, nan=0.0, posinf=SAFE_FLOAT_RANGE, neginf=-SAFE_FLOAT_RANGE)
+        return result
     
     @property
     def name(self) -> str:
@@ -1847,7 +1917,11 @@ class AutoMLMatrixStdAxis0Op(Operation):
         return MemoryType.VECTOR
     
     def execute(self, m: np.ndarray) -> np.ndarray:
-        return np.std(m, axis=0).astype(np.float32)
+        m = _clip_array(m)
+        result = np.std(m, axis=0).astype(np.float32)
+        result = _clip_array(result)
+        result = np.nan_to_num(result, nan=0.0, posinf=SAFE_FLOAT_RANGE, neginf=-SAFE_FLOAT_RANGE)
+        return result
     
     @property
     def name(self) -> str:
@@ -1867,7 +1941,11 @@ class AutoMLVectorStdOp(Operation):
         return MemoryType.SCALAR
     
     def execute(self, v: np.ndarray) -> float:
-        return float(np.std(v))
+        v = _clip_array(v)
+        result = np.std(v)
+        if not np.isfinite(result):
+            result = 0.0
+        return float(result)
     
     @property
     def name(self) -> str:
@@ -1887,7 +1965,11 @@ class AutoMLMatrixStdOp(Operation):
         return MemoryType.SCALAR
     
     def execute(self, m: np.ndarray) -> float:
-        return float(np.std(m))
+        m = _clip_array(m)
+        result = np.std(m)
+        if not np.isfinite(result):
+            result = 0.0
+        return float(result)
     
     @property
     def name(self) -> str:

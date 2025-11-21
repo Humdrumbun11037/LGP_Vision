@@ -11,6 +11,7 @@ class Instruction:
     dest_index: int
     source_types: List[MemoryType]
     source_indices: List[int]
+    observation: bool
 
     def __post_init__(self):
         """Validate instruction after creation"""

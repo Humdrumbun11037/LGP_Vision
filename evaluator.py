@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Optional, List, Tuple
+from typing import TYPE_CHECKING, Optional, List, Tuple, Union
 
 import numpy as np
 from scipy.special import expit
@@ -13,7 +13,14 @@ import gymnasium as gym  # type: ignore[import]
 
 from memory_system import MemoryType
 
-from individual import Individual  
+from individual import Individual
+
+try:
+    from vision_encoder import MobileNetV2FeatureExtractor
+    VISION_ENCODER_AVAILABLE = True
+except ImportError:
+    VISION_ENCODER_AVAILABLE = False
+    MobileNetV2FeatureExtractor = None  
 
 
 class FitnessEvaluator(ABC):
@@ -152,13 +159,18 @@ class FlappyBirdEvaluator(FitnessEvaluator):
         render_mode: Optional[str] = None,
         rng: Optional[np.random.Generator] = None,
         # Image processing parameters
-        patch_strategy: str = "full_image",  # "full_image" or "quantized"
+        patch_strategy: str = "full_image",  # "full_image", "quantized", or "feature_vector"
         # Note: For "full_image" strategy, returns a single 700x700 observation:
         #       crops to 700x576 (removes top/bottom 50px), pads to 700x700 (62px each side).
-        # Note: For "quantized" strategy, pads image to 800x800 first, then downsamples using quantization_factor.
-        color_channel: int = 1,  # 0=R, 1=G, 2=B, or -1 for grayscale (mean)
-        normalize: bool = True,  # Normalize to [0, 1]
+        # Note: For "quantized" strategy:
+        #       1. Trims bottom 50 rows (green channel only) -> 750 rows by 576 pixels
+        #       2. Quantizes by quantization_factor -> (750*factor) x (576*factor)
+        #       3. Stretches horizontally to create square matrix -> (750*factor) x (750*factor)
+        # Note: For "feature_vector" strategy, uses MobileNetV2 to extract feature vectors (returns vector observations).
+        color_channel: int = 1,  # 0=R, 1=G, 2=B, or -1 for grayscale (mean). Only used for "full_image" and "quantized" strategies.
+        normalize: bool = True,  # Normalize to [0, 1]. Only used for "full_image" and "quantized" strategies.
         quantization_factor: float = 0.5,  # Factor to downsample by (0.5 = half resolution). Only used for "quantized" strategy.
+        feature_vector_size: int = 256,  # Feature vector dimension. Only used for "feature_vector" strategy.
     ) -> None:
         if gym is None:
             raise ImportError("gymnasium is required for FlappyBirdEvaluator")
@@ -166,6 +178,21 @@ class FlappyBirdEvaluator(FitnessEvaluator):
             import flappy_bird_env  # noqa
         except ImportError:
             raise ImportError("flappy-bird-env is required for FlappyBirdEvaluator")
+        
+        # Validate patch_strategy
+        if patch_strategy not in ["full_image", "quantized", "feature_vector"]:
+            raise ValueError(
+                f"Unknown patch_strategy: {patch_strategy}. "
+                f"Must be 'full_image', 'quantized', or 'feature_vector'"
+            )
+        
+        # Validate feature_vector strategy requirements
+        if patch_strategy == "feature_vector":
+            if not VISION_ENCODER_AVAILABLE:
+                raise ImportError(
+                    "MobileNetV2FeatureExtractor is required for 'feature_vector' strategy. "
+                    "Install PyTorch and torchvision: pip install torch torchvision"
+                )
         
         super().__init__(
             episodes=episodes,
@@ -183,6 +210,15 @@ class FlappyBirdEvaluator(FitnessEvaluator):
         self.color_channel = color_channel
         self.normalize = normalize
         self.quantization_factor = quantization_factor
+        self.feature_vector_size = feature_vector_size
+        
+        # Initialize feature extractor if using feature_vector strategy
+        if patch_strategy == "feature_vector":
+            self.feature_extractor = MobileNetV2FeatureExtractor(
+                feature_size=feature_vector_size
+            )
+        else:
+            self.feature_extractor = None
 
     def close(self) -> None:
         if hasattr(self, "env") and self.env is not None:
@@ -191,6 +227,24 @@ class FlappyBirdEvaluator(FitnessEvaluator):
     def __del__(self) -> None:  # pragma: no cover
         self.close()
 
+    def _extract_features(self, observation: np.ndarray) -> np.ndarray:
+        """
+        Extract feature vector from RGB observation using MobileNetV2.
+        
+        Args:
+            observation: RGB image array of shape (H, W, 3) with values 0-255
+            
+        Returns:
+            1D numpy array of shape (feature_vector_size,) with dtype float32
+        """
+        if self.feature_extractor is None:
+            raise RuntimeError(
+                "Feature extractor not initialized. "
+                "This method should only be called when patch_strategy='feature_vector'"
+            )
+        
+        return self.feature_extractor.extract_features(observation)
+    
     def _extract_color_channel(self, observation: np.ndarray) -> np.ndarray:
         """
         Extract and normalize a color channel from RGB observation.
@@ -248,12 +302,14 @@ class FlappyBirdEvaluator(FitnessEvaluator):
         Process image based on configured strategy.
         
         Args:
-            image: Single channel image array of shape (H, W)
+            image: Single channel image array of shape (H, W) for "full_image" and "quantized" strategies.
+                   For "feature_vector" strategy, this should be the raw RGB observation.
             
         Returns:
-            List containing a single matrix:
-            - For "full_image" strategy: returns exactly 1 matrix of shape (700, 700).
-            - For "quantized" strategy: pads image to 800x800 first, then downsamples and returns as single matrix.
+            List containing:
+            - For "full_image" strategy: exactly 1 matrix of shape (700, 700).
+            - For "quantized" strategy: exactly 1 matrix (downsampled).
+            - For "feature_vector" strategy: exactly 1 feature vector (1D array).
         """
         if self.patch_strategy == "full_image":
             # Full image strategy: crop to 700x576, pad to 700x700, return single observation
@@ -261,8 +317,10 @@ class FlappyBirdEvaluator(FitnessEvaluator):
             return self._extract_full_image(image)
 
         elif self.patch_strategy == "quantized":
-            # Quantized strategy: pad to 800x800 first, then downsample
-            # This ensures consistent input size before quantization
+            # Quantized strategy:
+            # 1. Trim bottom 50 rows (green channel only) -> 750 rows by 576 pixels
+            # 2. Quantize by quantization_factor
+            # 3. Stretch horizontally to create a square matrix
             try:
                 import cv2
             except ImportError:
@@ -270,53 +328,69 @@ class FlappyBirdEvaluator(FitnessEvaluator):
             
             h, w = image.shape
             
-            # Step 1: Pad image to 800x800 by adding zeros on each side
-            # Similar to full_image strategy but to 800x800 instead of 700x700
-            target_size = 800
-            padded = np.zeros((target_size, target_size), dtype=np.float32)
+            # Step 1: Trim bottom 50 rows
+            # This gives us 750 rows by 576 pixels
+            crop_bottom = 50
+            trimmed = image[:h-crop_bottom, :]  # Shape: (750, 576)
             
-            # Center the image in the padded array
-            pad_top = (target_size - h) // 2
-            pad_left = (target_size - w) // 2
-            padded[pad_top:pad_top + h, pad_left:pad_left + w] = image
+            # Step 2: Quantize by quantization_factor
+            quantized_h = max(1, int(trimmed.shape[0] * self.quantization_factor))
+            quantized_w = max(1, int(trimmed.shape[1] * self.quantization_factor))
             
-            # Step 2: Downsample the 800x800 padded image using quantization_factor
-            target_w = max(1, int(target_size * self.quantization_factor))
-            target_h = max(1, int(target_size * self.quantization_factor))
-            
-            # Downsample using INTER_AREA interpolation (best for downsampling)
             # Convert to uint8 for cv2.resize, then back to float32
             if self.normalize:
                 # Image is already normalized [0, 1], convert to [0, 255] for cv2
-                padded_uint8 = (padded * 255.0).clip(0, 255).astype(np.uint8)
+                trimmed_uint8 = (trimmed * 255.0).clip(0, 255).astype(np.uint8)
             else:
                 # Image is [0, 255], just convert to uint8
-                padded_uint8 = padded.clip(0, 255).astype(np.uint8)
+                trimmed_uint8 = trimmed.clip(0, 255).astype(np.uint8)
             
-            downsampled_uint8 = cv2.resize(
-                padded_uint8,
-                (target_w, target_h),
+            quantized_uint8 = cv2.resize(
+                trimmed_uint8,
+                (quantized_w, quantized_h),
                 interpolation=cv2.INTER_AREA
             )
             
             # Convert back to float32
             if self.normalize:
-                downsampled = downsampled_uint8.astype(np.float32) / 255.0
+                quantized = quantized_uint8.astype(np.float32) / 255.0
             else:
-                downsampled = downsampled_uint8.astype(np.float32)
+                quantized = quantized_uint8.astype(np.float32)
+            
+            # Step 3: Stretch horizontally to create a square matrix
+            # The final height is quantized_h, so we stretch width to match
+            final_size = quantized_h  # Square matrix: height = width
+            squared_uint8 = cv2.resize(
+                quantized_uint8,
+                (final_size, final_size),
+                interpolation=cv2.INTER_LINEAR  # Use linear interpolation for stretching
+            )
+            
+            # Convert back to float32
+            if self.normalize:
+                squared = squared_uint8.astype(np.float32) / 255.0
+            else:
+                squared = squared_uint8.astype(np.float32)
             
             # Return as single matrix
-            return [downsampled]
+            return [squared]
+        
+        elif self.patch_strategy == "feature_vector":
+            # Feature vector strategy: extract features using MobileNetV2
+            # Note: For this strategy, 'image' parameter should actually be the raw RGB observation
+            # This is handled in _process_observation
+            feature_vector = self._extract_features(image)
+            return [feature_vector]
         
         else:
             raise ValueError(
                 f"Unknown patch_strategy: {self.patch_strategy}. "
-                f"Must be 'full_image' or 'quantized'"
+                f"Must be 'full_image', 'quantized', or 'feature_vector'"
             )
 
-    def _process_observation(self, observation: np.ndarray) -> List[np.ndarray]:
+    def _process_observation(self, observation: np.ndarray) -> Tuple[List[np.ndarray], str]:
         """
-        Process the raw RGB observation into matrix observations for memory.
+        Process the raw RGB observation into observations for memory.
         
         This method processes the image based on configured strategy.
         
@@ -324,17 +398,21 @@ class FlappyBirdEvaluator(FitnessEvaluator):
             observation: RGB image array of shape (800, 576, 3) with values 0-255
             
         Returns:
-            List containing a single matrix:
-            - For "full_image": shape (700, 700)
-            - For "quantized": shape depends on quantization_factor
+            Tuple of (observations_list, observation_type) where:
+            - observation_type is 'matrix' for "full_image" and "quantized" strategies
+            - observation_type is 'vector' for "feature_vector" strategy
+            - observations_list contains the processed observations
         """
-        # Step 1: Extract color channel
-        single_channel = self._extract_color_channel(observation)
-        
-        # Step 2: Process image based on strategy (returns list with single matrix)
-        matrix_observations = self._extract_patches(single_channel)
-        
-        return matrix_observations
+        if self.patch_strategy == "feature_vector":
+            # For feature_vector strategy, pass raw RGB observation directly
+            feature_vector = self._extract_features(observation)
+            return [feature_vector], 'vector'
+        else:
+            # For full_image and quantized strategies, extract color channel first
+            single_channel = self._extract_color_channel(observation)
+            # Process image based on strategy (returns list with single matrix)
+            matrix_observations = self._extract_patches(single_channel)
+            return matrix_observations, 'matrix'
 
     def _evaluate_episode(self, individual: 'Individual', episode_idx: int) -> float:
         observation, _ = self.env.reset()
@@ -344,9 +422,14 @@ class FlappyBirdEvaluator(FitnessEvaluator):
         total_reward = 0.0
 
         for _ in range(self.max_steps):
-            # Process image observation into matrices
-            matrix_observations = self._process_observation(observation)
-            memory.load_observation({'matrix': matrix_observations})
+            # Process observation based on strategy
+            processed_observations, obs_type = self._process_observation(observation)
+            
+            # Load observations into memory based on type
+            if obs_type == 'vector':
+                memory.load_observation({'vector': processed_observations})
+            else:  # obs_type == 'matrix'
+                memory.load_observation({'matrix': processed_observations})
 
             individual.get_effective_program(self.output_registers).execute(memory)
 
