@@ -78,16 +78,21 @@ class InstructionSet:
         # Pick source registers based on operation's input types
         source_types = op.input_types()
         source_indices = []
+        source_obs_flags = []
+        
         for src_type in source_types:
-            # Can read from BOTH obs and working registers
-            valid_indices = self._source_ranges[src_type]
-            source_indices.append(rng.choice(valid_indices))
+            # Decide observation flag (50% probability)
+            obs_flag = rng.random() < 0.5
+            source_obs_flags.append(obs_flag)
+            
+            # Always generate large range index regardless of flag
+            source_indices.append(self.get_random_source(src_type, rng))
         
         # Pick destination register (working registers only)
         dest_type = op.output_type()
         dest_index = rng.choice(self._dest_ranges[dest_type])
         
-        return Instruction(op, dest_type, dest_index, source_types, source_indices)
+        return Instruction(op, dest_type, dest_index, source_types, source_indices, source_obs_flags)
     
     def generate_random_program(self, length: int, rng=None):
         """Generate a random program of given length"""
@@ -105,12 +110,26 @@ class InstructionSet:
             rng = np.random.default_rng()
         dest_index = rng.choice(self._dest_ranges[dest_type])
         return dest_index
-    def get_random_source(self, source_type, rng= None):
+    def get_random_source(self, source_type, rng=None):
+        """
+        Generate a random source index in large range.
+        
+        All indices are generated in range [0, 10000) regardless of 
+        observation flag. The flag determines how the index is interpreted
+        during execution (modulo by matrix dimensions vs register counts).
+        
+        Args:
+            source_type: Memory type (unused but kept for interface compatibility)
+            rng: Optional random number generator
+        
+        Returns:
+            Random integer in range [0, 10000)
+        """
         if rng is None:
             rng = np.random.default_rng()
         
-        source_index = rng.choice(self._source_ranges[source_type])
-        return source_index
+        # Always generate large range index - interpretation happens during execute()
+        return int(rng.integers(0, 10000))
 
 
 

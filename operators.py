@@ -54,9 +54,15 @@ class GeneticOperators:
                 instruction.dest_type, generator
             )
             instruction.source_types = new_op.input_types()
+            # Generate indices and observation flags
             instruction.source_indices = [
                 self.instruction_set.get_random_source(src_type, generator)
                 for src_type in instruction.source_types
+            ]
+            # Generate observation flags (50% probability each)
+            instruction.source_obs_flags = [
+                generator.random() < 0.5
+                for _ in instruction.source_types
             ]
         elif mutation == 1:
             # Mutate only the destination index (keeping type intact).
@@ -214,21 +220,21 @@ class GeneticOperators:
 
 if __name__ == "__main__":
     from operation import ScalarAddOp, ScalarMulOp
-    from memory_system import MemoryBank, MemoryType
+    from memory_system import MemoryBank, MemoryType, MemoryConfig
 
-    memory = MemoryBank(
+    memory_config = MemoryConfig(
         n_scalar=8,
         n_vector=8,
         n_matrix=8,
         n_obs_scalar=0,
         n_obs_vector=0,
-        n_obs_matrix=0,
+        n_obs_matrix=1,  # Need at least 1 observation matrix for matrix observation access
         vector_size=5,
         matrix_shape=(9, 9),
     )
 
     operations = [op() for op in ALL_OPS]
-    instr_set = InstructionSet(operations, memory)
+    instr_set = InstructionSet(operations, memory_config)
     ops = GeneticOperators(instr_set, np.random.default_rng(0))
 
     instruction = Instruction(
@@ -237,24 +243,25 @@ if __name__ == "__main__":
         dest_index=0,
         source_types=[MemoryType.SCALAR, MemoryType.SCALAR],
         source_indices=[0, 1],
+        source_obs_flags=[False, False],
     )
 
-    print("Initial instruction:", instruction)
+    print("Initial instruction:", instruction.to_resolved_str(memory_config))
 
     print("\n--- Micro Mutation Samples ---")
     for _ in range(3):
-        before_repr = repr(instruction)
+        before_repr = instruction.to_resolved_str(memory_config)
         ops.micro_mutate(instruction)
         print("Before:", before_repr)
-        print("After: ", instruction)
+        print("After: ", instruction.to_resolved_str(memory_config))
         print("Valid?:", instruction.is_valid())
         print()
 
     print("--- Macro Mutation Samples ---")
     for _ in range(3):
-        print("old Instruction:",instruction)
+        print("old Instruction:", instruction.to_resolved_str(memory_config))
         new_instr = ops.macro_mutate(instruction)
-        print("New instruction:", new_instr)
+        print("New instruction:", new_instr.to_resolved_str(memory_config))
         print("Valid?:", new_instr.is_valid())
         print()
 
@@ -265,6 +272,7 @@ if __name__ == "__main__":
             dest_index=0,
             source_types=[MemoryType.SCALAR, MemoryType.SCALAR],
             source_indices=[0, 1],
+            source_obs_flags=[False, False],
         )
     ])
 
@@ -272,11 +280,11 @@ if __name__ == "__main__":
     for _ in range(10):
         print("Program before:")
         for idx, instr in enumerate(program.instructions):
-            print(f"  {idx}: {instr}")
+            print(f"  {idx}: {instr.to_resolved_str(memory_config)}")
         ops.mutate_program(program, threshold=1.0)
         print("Program after:")
         for idx, instr in enumerate(program.instructions):
-            print(f"  {idx}: {instr}")
+            print(f"  {idx}: {instr.to_resolved_str(memory_config)}")
         print()
 
     # Benchmark constant mutation implementations

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from token import OP
 from typing import List
-from memory_system import MemoryBank, MemoryType
+from memory_system import MemoryBank, MemoryType, MemoryConfig
 from operation import Operation
 
 @dataclass
@@ -11,7 +11,7 @@ class Instruction:
     dest_index: int
     source_types: List[MemoryType]
     source_indices: List[int]
-    observation: bool
+    source_obs_flags: List[bool]
 
     def __post_init__(self):
         """Validate instruction after creation"""
@@ -26,24 +26,39 @@ class Instruction:
                 f"Mismatch: {len(self.source_types)} source types but "
                 f"{len(self.source_indices)} source indices"
             )
+        
+        if len(self.source_types) != len(self.source_obs_flags):
+            raise ValueError(
+                f"Mismatch: {len(self.source_types)} source types but "
+                f"{len(self.source_obs_flags)} source observation flags"
+            )
     def execute(self, memory:MemoryBank):
         inputs = []
-        for src_type, src_idx in zip(self.source_types,self.source_indices):
-            if src_idx < 0:
-                obs_idx = abs(src_idx) - 1 # - 1 to ensure the 0 value can be obtained - 
+        h, w = memory.matrix_shape  # Matrix dimensions (e.g., 37, 37)
+        obs_matrix = memory.obs_matrices[0]  # Single observation matrix
+        
+        for src_type, src_idx, obs_flag in zip(self.source_types, self.source_indices, self.source_obs_flags):
+            if obs_flag:
+                # Observation matrix access: interpret index based on matrix dimensions
                 if src_type == MemoryType.SCALAR:
-                    inputs.append(float(memory.obs_scalars[obs_idx%memory.n_obs_scalar])) # wrap around babyyyyy
+                    flat_idx = src_idx % (h * w)  # % 1369 for 37x37
+                    row = flat_idx // w
+                    col = flat_idx % w
+                    inputs.append(float(obs_matrix[row, col]))
                 elif src_type == MemoryType.VECTOR:
-                    inputs.append(memory.obs_vectors[obs_idx% memory.n_obs_vector])
+                    col_idx = src_idx % w  # % 37 for 37x37
+                    inputs.append(obs_matrix[:, col_idx].copy())  # Column vector
                 elif src_type == MemoryType.MATRIX:
-                    inputs.append(memory.obs_matrices[obs_idx % memory.n_obs_matrix])
+                    obs_idx = src_idx % memory.n_obs_matrix  # % 1 = 0 currently
+                    inputs.append(memory.obs_matrices[obs_idx].copy())
             else:
+                # Register access: interpret index based on register counts
                 if src_type == MemoryType.SCALAR:
                     inputs.append(float(memory.scalars[src_idx % memory.n_scalar]))
                 elif src_type == MemoryType.VECTOR:
-                    inputs.append(memory.vectors[src_idx % memory.n_vector])
+                    inputs.append(memory.vectors[src_idx % memory.n_vector].copy())
                 elif src_type == MemoryType.MATRIX:
-                    inputs.append(memory.matrices[src_idx % memory.n_matrix])
+                    inputs.append(memory.matrices[src_idx % memory.n_matrix].copy())
         
         result = self.operation.execute(*inputs)
 
@@ -71,7 +86,7 @@ class Instruction:
     
     def uses_observation(self) -> bool:
         """Check if this instruction reads from any observation register"""
-        return any(idx < 0 for idx in self.source_indices)
+        return any(self.source_obs_flags)
     
     def get_read_registers(self) -> List[tuple]:
         """
@@ -95,8 +110,8 @@ class Instruction:
         """Human-readable representation"""
         # Format source operands
         src_parts = []
-        for src_type, src_idx in zip(self.source_types, self.source_indices):
-            if src_idx < 0:
+        for src_type, src_idx, obs_flag in zip(self.source_types, self.source_indices, self.source_obs_flags):
+            if obs_flag:
                 # Observation register
                 src_parts.append(f"obs_{src_type.value}[{src_idx}]")
             else:
@@ -114,11 +129,73 @@ class Instruction:
         dest = f"{type_abbrev[self.dest_type.value]}{self.dest_index}"
         
         srcs = []
-        for t, i in zip(self.source_types, self.source_indices):
-            prefix = "o" if i < 0 else ""
-            srcs.append(f"{prefix}{type_abbrev[t.value]}{abs(i)}")
+        for t, i, obs_flag in zip(self.source_types, self.source_indices, self.source_obs_flags):
+            prefix = "o" if obs_flag else ""
+            srcs.append(f"{prefix}{type_abbrev[t.value]}{i}")
         
         return f"{dest}={self.operation.name}({','.join(srcs)})"
+    
+    def to_resolved_str(self, memory_config: MemoryConfig) -> str:
+        """
+        String representation showing resolved indices (after modulo operations).
+        
+        Useful for debugging to see which actual registers are being accessed.
+        
+        Args:
+            memory_config: Memory configuration to compute modulo operations
+        
+        Returns:
+            String showing both raw indices and resolved indices
+        """
+        h, w = memory_config.matrix_shape
+        
+        # Helper function to safely compute modulo (handles zero case)
+        def safe_mod(value: int, divisor: int) -> str:
+            if divisor == 0:
+                return f"{value}?0"  # Show raw value with ?0 to indicate no registers
+            return str(value % divisor)
+        
+        # Format source operands with resolved indices
+        src_parts = []
+        for src_type, src_idx, obs_flag in zip(self.source_types, self.source_indices, self.source_obs_flags):
+            if obs_flag:
+                # Observation access - compute resolved index based on type
+                if src_type == MemoryType.SCALAR:
+                    resolved = safe_mod(src_idx, h * w)
+                    src_parts.append(f"obs_{src_type.value}[{src_idx}→{resolved}]")
+                elif src_type == MemoryType.VECTOR:
+                    resolved = safe_mod(src_idx, w) if w > 0 else f"{src_idx}?0"
+                    src_parts.append(f"obs_{src_type.value}[{src_idx}→col{resolved}]")
+                elif src_type == MemoryType.MATRIX:
+                    # For matrix observation, we always return the entire observation matrix
+                    # The index is modulo by n_obs_matrix (typically 1, so always 0 = full matrix)
+                    if memory_config.n_obs_matrix > 0:
+                        obs_idx = src_idx % memory_config.n_obs_matrix
+                        src_parts.append(f"obs_{src_type.value}[{src_idx}→full_matrix{obs_idx}]")
+                    else:
+                        src_parts.append(f"obs_{src_type.value}[{src_idx}→?0]")
+            else:
+                # Register access - compute resolved index based on register count
+                if src_type == MemoryType.SCALAR:
+                    resolved = safe_mod(src_idx, memory_config.n_scalar)
+                    src_parts.append(f"{src_type.value}[{src_idx}→{resolved}]")
+                elif src_type == MemoryType.VECTOR:
+                    resolved = safe_mod(src_idx, memory_config.n_vector)
+                    src_parts.append(f"{src_type.value}[{src_idx}→{resolved}]")
+                elif src_type == MemoryType.MATRIX:
+                    resolved = safe_mod(src_idx, memory_config.n_matrix)
+                    src_parts.append(f"{src_type.value}[{src_idx}→{resolved}]")
+        
+        # Resolve destination index
+        if self.dest_type == MemoryType.SCALAR:
+            dest_resolved = safe_mod(self.dest_index, memory_config.n_scalar)
+        elif self.dest_type == MemoryType.VECTOR:
+            dest_resolved = safe_mod(self.dest_index, memory_config.n_vector)
+        else:  # MATRIX
+            dest_resolved = safe_mod(self.dest_index, memory_config.n_matrix)
+        
+        src_str = ", ".join(src_parts)
+        return f"{self.dest_type.value}[{self.dest_index}→{dest_resolved}] = {self.operation.name}({src_str})"
 # if __name__ == "__main__":
 #     from Operations import ScalarAddOp, VectorDotProductOp, MatrixMeanOp
 #     import numpy as np

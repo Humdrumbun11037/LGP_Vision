@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, List
 import pickle
+import csv
 from pathlib import Path
+from datetime import datetime
 
 import numpy as np
 
@@ -22,6 +24,7 @@ class EvolutionConfig:
     crossover_threshold: float = 0.9
     verbose: bool = True
     checkpoint_path: Optional[str] = None  # Path to save checkpoints (overwrites on improvement)
+    stats_log_dir: Optional[str] = None  # Directory to save CSV statistics files
 
     def __post_init__(self) -> None:
         if self.max_generations <= 0:
@@ -62,6 +65,10 @@ class EvolutionEngine:
         self.best_agent_history: List[BestAgentInfo] = []
         # Track best fitness ever for checkpoint saving
         self.best_fitness_ever: Optional[float] = None
+        # CSV statistics logging
+        self._stats_file_path: Optional[Path] = None
+        if self.config.stats_log_dir is not None:
+            self._init_stats_logging()
 
     def run(self) -> Population:
         for gen in range(self.config.max_generations):
@@ -84,6 +91,7 @@ class EvolutionEngine:
             # Record statistics and checkpoints
             self.population.record_statistics()
             self._record_best_agent(gen)
+            self._log_generation_stats(gen)
             self._check_and_save_checkpoint(gen)
 
 
@@ -178,6 +186,125 @@ class EvolutionEngine:
             print(f"Best agent: fitness={info.fitness:.4f}, "
                   f"effective_code_rate={info.effective_code_rate:.3f} "
                   f"({info.effective_length}/{info.total_length})")
+    
+    def _init_stats_logging(self) -> None:
+        """Initialize CSV statistics logging file with headers."""
+        if self.config.stats_log_dir is None:
+            return
+        
+        stats_dir = Path(self.config.stats_log_dir)
+        stats_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate unique filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"lgp_run_{timestamp}.csv"
+        self._stats_file_path = stats_dir / filename
+        
+        # Write CSV header
+        try:
+            with open(self._stats_file_path, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    'generation',
+                    'best_fitness',
+                    'mean_fitness',
+                    'min_fitness',
+                    'max_fitness',
+                    'std_fitness',
+                    'best_effective_code_rate',
+                    'best_total_length',
+                    'best_effective_length',
+                    'mean_program_length',
+                    'std_program_length',
+                    'best_ever_fitness',
+                    'best_ever_generation',
+                ])
+            
+            if self.config.verbose:
+                print(f"✓ Statistics logging initialized: {self._stats_file_path}")
+        except Exception as e:
+            if self.config.verbose:
+                print(f"⚠ Warning: Failed to initialize statistics logging: {e}")
+            self._stats_file_path = None
+    
+    def _log_generation_stats(self, generation: int) -> None:
+        """Log statistics for the current generation to CSV file."""
+        if self._stats_file_path is None:
+            return
+        
+        try:
+            # Get fitness statistics from population
+            min_fitness, mean_fitness, max_fitness, std_fitness = self.population.compute_statistics()
+            
+            # Get best agent info (from current generation's best)
+            best_agent = self.population.get_best()
+            if best_agent.fitness is None:
+                # Skip logging if no valid fitness
+                return
+            
+            # Get best agent details from best_agent_history (last entry is current generation)
+            best_info = None
+            if len(self.best_agent_history) > 0:
+                # Find the entry for this generation
+                for info in reversed(self.best_agent_history):
+                    if info.generation == generation:
+                        best_info = info
+                        break
+            
+            # Fallback to computing if not in history
+            if best_info is None:
+                output_registers = getattr(self.evaluator, "output_registers", None)
+                if output_registers is None:
+                    effective_length = len(best_agent.program)
+                    effective_code_rate = 1.0
+                else:
+                    effective_length = best_agent.get_effective_length(output_registers)
+                    total_length = len(best_agent.program)
+                    effective_code_rate = effective_length / total_length if total_length > 0 else 0.0
+                best_total_length = len(best_agent.program)
+            else:
+                effective_code_rate = best_info.effective_code_rate
+                best_total_length = best_info.total_length
+                effective_length = best_info.effective_length
+            
+            # Get diversity metrics
+            diversity = self.population.get_diversity_metrics()
+            mean_program_length = diversity['mean_length']
+            std_program_length = diversity['std_length']
+            
+            # Get best-ever info
+            best_ever_fitness = (
+                self.population.best_ever.fitness 
+                if self.population.best_ever is not None and self.population.best_ever.fitness is not None
+                else None
+            )
+            best_ever_generation = (
+                self.population.best_ever_generation 
+                if self.population.best_ever is not None
+                else None
+            )
+            
+            # Write row to CSV
+            with open(self._stats_file_path, 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    generation,
+                    max_fitness,  # best_fitness (same as max_fitness)
+                    mean_fitness,
+                    min_fitness,
+                    max_fitness,
+                    std_fitness,
+                    effective_code_rate,
+                    best_total_length,
+                    effective_length,
+                    mean_program_length,
+                    std_program_length,
+                    best_ever_fitness if best_ever_fitness is not None else '',
+                    best_ever_generation if best_ever_generation is not None else '',
+                ])
+        except Exception as e:
+            if self.config.verbose:
+                print(f"⚠ Warning: Failed to log generation statistics: {e}")
     
     def _check_and_save_checkpoint(self, generation: int) -> None:
         """Check if there's a fitness improvement and save checkpoint if enabled."""
