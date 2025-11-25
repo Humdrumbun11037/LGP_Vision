@@ -1,14 +1,6 @@
 #!/usr/bin/env python3
 """Run FlappyBird evolution and generate fitness chart."""
 
-import sys
-from pathlib import Path
-
-# Add flappy-bird-env submodule to path if it exists (for direct import without pip install)
-_submodule_path = Path(__file__).parent / "flappy-bird-env"
-if _submodule_path.exists() and str(_submodule_path) not in sys.path:
-    sys.path.insert(0, str(_submodule_path))
-
 import flappy_bird_env  # noqa
 import numpy as np
 import matplotlib.pyplot as plt
@@ -54,7 +46,7 @@ def main(config_path: str = "config.yaml"):
     # Setup headless mode if specified in config
     eval_cfg = config.get('evaluator', {})
     headless = eval_cfg.get('headless', True)
-    
+
     # Create configurations from YAML
     memory_cfg = create_memory_config(config)
     eval_config = create_evaluator_config(config)

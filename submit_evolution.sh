@@ -29,18 +29,18 @@ source $SLURM_TMPDIR/env/bin/activate
 # Upgrade pip
 pip install --no-index --upgrade pip
 
-# Install packages (excluding flappy-bird-env)
+# Install packages (excluding flappy-bird-env - it's now part of the repo)
 grep -v "flappy-bird-env" requirements.txt > $SLURM_TMPDIR/requirements_wheelhouse.txt
 pip install --no-index -r $SLURM_TMPDIR/requirements_wheelhouse.txt
 
-# Verify submodule exists (should be initialized before submitting)
-if [ ! -d "flappy-bird-env/flappy_bird_env" ]; then
-    echo "ERROR: flappy-bird-env submodule not found!"
-    echo "Please run: git submodule update --init --recursive"
+# Verify flappy_bird_env package exists (it's now part of the repo)
+if [ ! -d "flappy_bird_env" ]; then
+    echo "ERROR: flappy_bird_env package not found!"
+    echo "The flappy_bird_env directory should be in the project root"
     exit 1
 fi
 
-# Verify import works (using direct import from submodule)
+# Verify import works
 python -c "import flappy_bird_env; print('✓ flappy_bird_env imported successfully')" || {
     echo "ERROR: flappy_bird_env import failed!"
     exit 1

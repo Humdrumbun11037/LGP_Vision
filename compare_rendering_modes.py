@@ -3,14 +3,7 @@
 import time
 import numpy as np
 import os
-import sys
-from pathlib import Path
 from scipy.special import expit
-
-# Add flappy-bird-env submodule to path if it exists (for direct import without pip install)
-_submodule_path = Path(__file__).parent / "flappy-bird-env"
-if _submodule_path.exists() and str(_submodule_path) not in sys.path:
-    sys.path.insert(0, str(_submodule_path))
 
 # Test configuration
 POPULATION_SIZE = 5  # Small for faster comparison

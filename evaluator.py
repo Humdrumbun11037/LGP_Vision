@@ -201,13 +201,6 @@ class FlappyBirdEvaluator(FitnessEvaluator):
         self,
         config: FlappyBirdEvaluatorConfig,
     ) -> None:
-        # Add flappy-bird-env submodule to path if it exists (for direct import without pip install)
-        import sys
-        from pathlib import Path
-        _submodule_path = Path(__file__).parent.parent / "flappy-bird-env"
-        if _submodule_path.exists() and str(_submodule_path) not in sys.path:
-            sys.path.insert(0, str(_submodule_path))
-        
         import flappy_bird_env  # noqa
        
         
