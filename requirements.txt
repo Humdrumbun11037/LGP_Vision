@@ -1,27 +1,28 @@
 # Essential packages for FlappyBird LGP Evolution
 # Clean requirements for Compute Canada cluster
 # Note: flappy_bird_env is included directly in the repo (not via pip)
+# Using >= to allow cluster-specific versions (e.g., pygame==2.5.2+computecanada)
 
 # Core scientific computing
-numpy==1.25.2
-scipy==1.14.1
+numpy>=1.25.0
+scipy>=1.14.0
 
 # Reinforcement learning environment
-gymnasium==0.29.1
-pygame==2.5.0
+gymnasium>=0.29.0
+pygame>=2.5.0
 
 # Image processing
-opencv-python==4.8.1.78
+opencv-python>=4.8.0
 
 # Plotting and visualization
-matplotlib==3.8.1
+matplotlib>=3.8.0
 
 # Configuration
-PyYAML==6.0.1
+PyYAML>=6.0
 
 # Deep learning (for feature_vector strategy - optional)
-torch==2.2.2
-torchvision==0.17.2
+torch>=2.2.0
+torchvision>=0.17.0
 
 # Utilities
-cloudpickle==3.0.0
+cloudpickle>=3.0.0
