@@ -12,7 +12,7 @@ gymnasium>=0.29.0
 pygame>=2.5.0
 
 # Image processing
-opencv-python>=4.8.0
+# opencv-python - loaded via 'module load opencv' on cluster
 
 # Plotting and visualization
 matplotlib>=3.8.0
