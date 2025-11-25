@@ -31,8 +31,18 @@ pip install --no-index --upgrade pip
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "Script directory: $SCRIPT_DIR"
 echo "Current directory: $(pwd)"
-cd "$SCRIPT_DIR" || exit 1
+cd "$SCRIPT_DIR" || {
+    echo "ERROR: Failed to change to script directory: $SCRIPT_DIR"
+    exit 1
+}
 echo "Changed to: $(pwd)"
+
+# Verify we're in the right place
+if [ ! -f "requirements.txt" ]; then
+    echo "ERROR: requirements.txt not found in $(pwd)"
+    echo "Please ensure you're running this script from the project root directory"
+    exit 1
+fi
 
 # Install packages available in wheelhouse (excluding flappy-bird-env)
 # Create a temporary requirements file without flappy-bird-env
@@ -43,13 +53,21 @@ pip install --no-index -r $SLURM_TMPDIR/requirements_wheelhouse.txt
 echo "Checking for flappy-bird-env submodule..."
 if [ ! -d "flappy-bird-env" ] || [ -z "$(ls -A flappy-bird-env 2>/dev/null)" ]; then
     echo "WARNING: flappy-bird-env submodule not found. Initializing..."
-    git submodule update --init --recursive
+    # Only try git commands if we're in a git repository
+    if [ -d ".git" ] || git rev-parse --git-dir > /dev/null 2>&1; then
+        git submodule update --init --recursive || {
+            echo "WARNING: git submodule command failed, but continuing..."
+        }
+    else
+        echo "WARNING: Not in a git repository. Submodule should already be initialized."
+    fi
+    # Check again after git command
     if [ ! -d "flappy-bird-env" ] || [ -z "$(ls -A flappy-bird-env 2>/dev/null)" ]; then
-        echo "ERROR: Failed to initialize flappy-bird-env submodule!"
+        echo "ERROR: flappy-bird-env submodule directory not found!"
         echo "Please ensure:"
         echo "  1. You've pulled the latest changes: git pull"
         echo "  2. The submodule is initialized: git submodule update --init --recursive"
-        echo "  3. The .gitmodules file exists in the repository"
+        echo "  3. The flappy-bird-env directory exists in the project root"
         exit 1
     fi
 fi
