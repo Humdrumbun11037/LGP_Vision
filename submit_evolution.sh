@@ -8,113 +8,59 @@
 #SBATCH --time=08:00:00
 #SBATCH --output=evolution_%j.out
 #SBATCH --error=evolution_%j.err
-
-# Email notifications
-# CHANGE THIS to your email address
 #SBATCH --mail-user=hillroyx@mcmaster.ca
 #SBATCH --mail-type=ALL
 
-# Optional: Get seed from command line argument (if you want to override config.yaml)
+# Change to the directory where sbatch was run from
+cd "$SLURM_SUBMIT_DIR" || {
+    echo "ERROR: Failed to change to submission directory: $SLURM_SUBMIT_DIR"
+    exit 1
+}
+
 seed=${1:-42}
 
 # Load Python module
 module load python/3.10
 
-# Create virtual environment in node-local storage (faster I/O)
+# Create virtual environment
 virtualenv --no-download $SLURM_TMPDIR/env
 source $SLURM_TMPDIR/env/bin/activate
 
 # Upgrade pip
 pip install --no-index --upgrade pip
 
-# Get the directory where the script is located (should be project root)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-echo "Script directory: $SCRIPT_DIR"
-echo "Current directory: $(pwd)"
-cd "$SCRIPT_DIR" || {
-    echo "ERROR: Failed to change to script directory: $SCRIPT_DIR"
-    exit 1
-}
-echo "Changed to: $(pwd)"
-
-# Verify we're in the right place
-if [ ! -f "requirements.txt" ]; then
-    echo "ERROR: requirements.txt not found in $(pwd)"
-    echo "Please ensure you're running this script from the project root directory"
-    exit 1
-fi
-
-# Install packages available in wheelhouse (excluding flappy-bird-env)
-# Create a temporary requirements file without flappy-bird-env
+# Install packages (excluding flappy-bird-env)
 grep -v "flappy-bird-env" requirements.txt > $SLURM_TMPDIR/requirements_wheelhouse.txt
 pip install --no-index -r $SLURM_TMPDIR/requirements_wheelhouse.txt
 
-# Ensure submodule is initialized (in case repo was cloned without --recursive)
-echo "Checking for flappy-bird-env submodule..."
-if [ ! -d "flappy-bird-env" ] || [ -z "$(ls -A flappy-bird-env 2>/dev/null)" ]; then
-    echo "WARNING: flappy-bird-env submodule not found. Initializing..."
-    # Only try git commands if we're in a git repository
-    if [ -d ".git" ] || git rev-parse --git-dir > /dev/null 2>&1; then
-        git submodule update --init --recursive || {
-            echo "WARNING: git submodule command failed, but continuing..."
-        }
-    else
-        echo "WARNING: Not in a git repository. Submodule should already be initialized."
-    fi
-    # Check again after git command
-    if [ ! -d "flappy-bird-env" ] || [ -z "$(ls -A flappy-bird-env 2>/dev/null)" ]; then
-        echo "ERROR: flappy-bird-env submodule directory not found!"
-        echo "Please ensure:"
-        echo "  1. You've pulled the latest changes: git pull"
-        echo "  2. The submodule is initialized: git submodule update --init --recursive"
-        echo "  3. The flappy-bird-env directory exists in the project root"
-        exit 1
-    fi
-fi
-
-# Verify submodule exists and has content
-if [ -d "flappy-bird-env" ]; then
-    echo "flappy-bird-env directory found:"
-    ls -la flappy-bird-env/ | head -5
-    echo "Attempting to install flappy-bird-env from local submodule (optional)..."
-    # Try pip install (may fail, but that's OK - we have direct import fallback)
-    pip install -e ./flappy-bird-env 2>/dev/null || {
-        echo "NOTE: pip install failed (this is OK - using direct import from submodule)"
-    }
-    echo "Verifying import (will work via pip install OR direct submodule import)..."
-    python -c "import flappy_bird_env; print('✓ flappy_bird_env imported successfully')" || {
-        echo "ERROR: flappy_bird_env import failed!"
-        echo "Checking if submodule structure is correct..."
-        ls -la flappy-bird-env/flappy_bird_env/ 2>/dev/null || echo "Submodule structure may be incorrect"
-        pip list | grep -E "flappy|gymnasium" || true
-        exit 1
-    }
-else
-    echo "ERROR: flappy-bird-env directory does not exist!"
+# Verify submodule exists (should be initialized before submitting)
+if [ ! -d "flappy-bird-env/flappy_bird_env" ]; then
+    echo "ERROR: flappy-bird-env submodule not found!"
+    echo "Please run: git submodule update --init --recursive"
     exit 1
 fi
 
-# Set random seed in environment (optional, if you want to override config.yaml)
+# Verify import works (using direct import from submodule)
+python -c "import flappy_bird_env; print('✓ flappy_bird_env imported successfully')" || {
+    echo "ERROR: flappy_bird_env import failed!"
+    exit 1
+}
+
+# Set random seed
 export PYTHONHASHSEED=$seed
 
-# Print job information
+# Print job info
 echo "=========================================="
 echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURM_NODELIST"
 echo "CPUs: $SLURM_CPUS_PER_TASK"
-echo "Memory per CPU: 128M (Total: ~4GB)"
-echo "Time limit: 4:00:00"
+echo "Working directory: $(pwd)"
 echo "Random seed: $seed"
 echo "=========================================="
 
-# Run the evolution script
-# The script will use all 32 CPUs automatically (n_jobs: null in config.yaml)
+# Run evolution
 python run_flappy_bird.py config.yaml
-
-# Optional: If you want to pass seed as argument, modify run_flappy_bird.py to accept it
-# python run_flappy_bird.py config.yaml --seed $seed
 
 echo "=========================================="
 echo "Job completed at $(date)"
 echo "=========================================="
-
