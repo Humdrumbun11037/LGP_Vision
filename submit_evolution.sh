@@ -24,15 +24,23 @@ module load python/3.10
 virtualenv --no-download $SLURM_TMPDIR/env
 source $SLURM_TMPDIR/env/bin/activate
 
-# Upgrade pip and install dependencies
+# Upgrade pip
 pip install --no-index --upgrade pip
-pip install --no-index -r requirements.txt
 
-# Note: If flappy-bird-env is not available via pip, you may need to:
-# 1. Install from git: pip install git+https://github.com/user/flappy-bird-env.git
-# 2. Or copy the package to cluster and install: pip install /path/to/flappy-bird-env
-# 3. Or if it's a local package, add it to your project directory and install:
-#    pip install -e ./flappy-bird-env
+# Install packages available in wheelhouse (excluding flappy-bird-env)
+# Create a temporary requirements file without flappy-bird-env
+grep -v "flappy-bird-env" requirements.txt > $SLURM_TMPDIR/requirements_wheelhouse.txt
+pip install --no-index -r $SLURM_TMPDIR/requirements_wheelhouse.txt
+
+# Ensure submodule is initialized (in case repo was cloned without --recursive)
+if [ ! -d "flappy-bird-env" ] || [ -z "$(ls -A flappy-bird-env 2>/dev/null)" ]; then
+    echo "Initializing flappy-bird-env submodule..."
+    git submodule update --init --recursive
+fi
+
+# Install flappy-bird-env from local submodule (editable install)
+# This uses the flappy-bird-env submodule in the project directory
+pip install --no-index -e ./flappy-bird-env
 
 # Set random seed in environment (optional, if you want to override config.yaml)
 export PYTHONHASHSEED=$seed

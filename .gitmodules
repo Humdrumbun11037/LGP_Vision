@@ -1,0 +1,3 @@
+[submodule "flappy-bird-env"]
+	path = flappy-bird-env
+	url = https://github.com/robertoschiavone/flappy-bird-env.git
