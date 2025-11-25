@@ -11,7 +11,7 @@
 
 # Email notifications
 # CHANGE THIS to your email address
-#SBATCH --mail-user=hillroy@mcmaster.ca
+#SBATCH --mail-user=hillroyx@mcmaster.ca
 #SBATCH --mail-type=ALL
 
 # Optional: Get seed from command line argument (if you want to override config.yaml)
@@ -27,20 +27,56 @@ source $SLURM_TMPDIR/env/bin/activate
 # Upgrade pip
 pip install --no-index --upgrade pip
 
+# Get the directory where the script is located (should be project root)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo "Script directory: $SCRIPT_DIR"
+echo "Current directory: $(pwd)"
+cd "$SCRIPT_DIR" || exit 1
+echo "Changed to: $(pwd)"
+
 # Install packages available in wheelhouse (excluding flappy-bird-env)
 # Create a temporary requirements file without flappy-bird-env
 grep -v "flappy-bird-env" requirements.txt > $SLURM_TMPDIR/requirements_wheelhouse.txt
 pip install --no-index -r $SLURM_TMPDIR/requirements_wheelhouse.txt
 
 # Ensure submodule is initialized (in case repo was cloned without --recursive)
+echo "Checking for flappy-bird-env submodule..."
 if [ ! -d "flappy-bird-env" ] || [ -z "$(ls -A flappy-bird-env 2>/dev/null)" ]; then
-    echo "Initializing flappy-bird-env submodule..."
+    echo "WARNING: flappy-bird-env submodule not found. Initializing..."
     git submodule update --init --recursive
+    if [ ! -d "flappy-bird-env" ]; then
+        echo "ERROR: Failed to initialize submodule. Trying alternative installation..."
+        # Fallback: try installing from PyPI if available
+        pip install flappy-bird-env || {
+            echo "ERROR: Could not install flappy-bird-env. Exiting."
+            exit 1
+        }
+    fi
 fi
 
-# Install flappy-bird-env from local submodule (editable install)
-# This uses the flappy-bird-env submodule in the project directory
-pip install --no-index -e ./flappy-bird-env
+# Verify submodule exists and has content
+if [ -d "flappy-bird-env" ]; then
+    echo "flappy-bird-env directory found:"
+    ls -la flappy-bird-env/ | head -5
+    echo "Installing flappy-bird-env from local submodule..."
+    # Try without --no-index first (in case it needs to install dependencies)
+    pip install -e ./flappy-bird-env || {
+        echo "WARNING: Editable install failed, trying regular install..."
+        pip install --no-index -e ./flappy-bird-env || {
+            echo "ERROR: Failed to install flappy-bird-env. Exiting."
+            exit 1
+        }
+    }
+    echo "Verifying installation..."
+    python -c "import flappy_bird_env; print('✓ flappy_bird_env imported successfully')" || {
+        echo "ERROR: flappy_bird_env import failed after installation!"
+        pip list | grep flappy
+        exit 1
+    }
+else
+    echo "ERROR: flappy-bird-env directory does not exist!"
+    exit 1
+fi
 
 # Set random seed in environment (optional, if you want to override config.yaml)
 export PYTHONHASHSEED=$seed
