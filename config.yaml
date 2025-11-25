@@ -22,7 +22,7 @@ memory:
 # Settings for the FlappyBird environment evaluator
 evaluator:
   env_id: "FlappyBird-v0"  # Gymnasium environment ID
-  episodes: 5              # Number of episodes per evaluation
+  episodes: 1              # Number of episodes per evaluation
   max_steps: 500           # Maximum steps per episode
   output_register: 0      # Scalar register to read action from
   headless: true            # Use headless mode (faster, no windows). If false, uses "human" rendering
@@ -42,15 +42,15 @@ evaluator:
 # Population Configuration
 # Settings for the evolutionary population
 population:
-  size: 1000                   # Population size
+  size: 5                   # Population size
   program_length: [1, 10]     # Program length range [min, max]
-  elitism: 500                 # Number of elite individuals to preserve
+  elitism: 0                 # Number of elite individuals to preserve
   max_program_length: null     # Maximum program length (null for no limit)
 
 # Evolution Configuration
 # Settings for the evolutionary algorithm
 evolution:
-  max_generations: 500          # Maximum number of generations
+  max_generations: 2          # Maximum number of generations
   mutation_threshold: 0.9     # Probability threshold for mutation (0.0-1.0)
   constant_mutation_rate: 0.1 # Probability of mutating constants (0.0-1.0)
   crossover_threshold: 0.9     # Probability threshold for crossover (0.0-1.0)

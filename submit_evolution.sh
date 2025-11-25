@@ -5,13 +5,13 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem-per-cpu=128M
-#SBATCH --time=48:00:00
+#SBATCH --time=08:00:00
 #SBATCH --output=evolution_%j.out
 #SBATCH --error=evolution_%j.err
 
 # Email notifications
 # CHANGE THIS to your email address
-#SBATCH --mail-user=your.email@example.com
+#SBATCH --mail-user=hillroy@mcmaster.ca
 #SBATCH --mail-type=ALL
 
 # Optional: Get seed from command line argument (if you want to override config.yaml)

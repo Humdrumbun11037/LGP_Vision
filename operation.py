@@ -5,10 +5,9 @@ from typing import List, Any
 from memory_system import MemoryType
 
 # CV operations dependencies
-try:
-    import cv2
-except ImportError:
-    cv2 = None
+
+import cv2
+
 
 try:
     from scipy import ndimage
@@ -2437,8 +2436,7 @@ class CVSobelXOp(Operation):
         return MemoryType.MATRIX
     
     def execute(self, m: np.ndarray, kernel_size: float) -> np.ndarray:
-        if cv2 is None:
-            raise ImportError("OpenCV (cv2) is required for CV operations")
+        
         if m.size == 0:
             return m.astype(np.float32)
         
@@ -2476,8 +2474,7 @@ class CVSobelYOp(Operation):
         return MemoryType.MATRIX
     
     def execute(self, m: np.ndarray, kernel_size: float) -> np.ndarray:
-        if cv2 is None:
-            raise ImportError("OpenCV (cv2) is required for CV operations")
+        
         if m.size == 0:
             return m.astype(np.float32)
         
