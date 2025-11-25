@@ -220,10 +220,11 @@ def get_operations_config(config: Dict[str, Any]) -> Dict[str, bool]:
         config: Dictionary containing configuration sections
         
     Returns:
-        Dictionary with 'use_automl' and 'use_cv' boolean flags
+        Dictionary with 'use_minimal', 'use_automl', and 'use_cv' boolean flags
     """
     ops_cfg = config.get('operations', {})
     return {
+        'use_minimal': ops_cfg.get('use_minimal', False),  # Use minimal 24-op set for FlappyBird
         'use_automl': ops_cfg.get('use_automl', True),
         'use_cv': ops_cfg.get('use_cv', True),
     }

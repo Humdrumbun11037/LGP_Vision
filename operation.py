@@ -3029,6 +3029,49 @@ CV_ALL_OPS = (
     CV_POOLING_OPS
 )
 
+# ==================== MINIMAL OPERATION SET FOR FLAPPYBIRD ====================
+# Carefully selected 27 operations for FlappyBird evolution
+# Balanced across types with essential cross-type operations
+
+FLAPPYBIRD_MINIMAL_OPS = [
+    # SCALAR ARITHMETIC (8 ops) - Decision making
+    AutoMLScalarAddOp,
+    AutoMLScalarSubOp,
+    AutoMLScalarMulOp,
+    AutoMLScalarDivOp,
+    AutoMLScalarMinOp,
+    AutoMLScalarMaxOp,
+    AutoMLScalarAbsOp,
+    AutoMLScalarHeavisideOp,  # Critical for binary decisions
+    
+    # SCALAR TRIG (3 ops) - Non-linear transformations
+    AutoMLScalarSinOp,        # Oscillation, periodic patterns
+    AutoMLScalarCosOp,        # Oscillation, phase shift
+    AutoMLScalarArctanOp,     # Angle computation, bounded output
+    
+    # VECTOR (5 ops) - Intermediate processing
+    AutoMLVectorMeanOp,       # Vector → Scalar
+    AutoMLVectorNormOp,       # Vector → Scalar
+    AutoMLVectorAddOp,
+    AutoMLVectorSubOp,
+    AutoMLVectorDotOp,        # Vector × Vector → Scalar
+    
+    # MATRIX (6 ops) - Image manipulation
+    AutoMLMatrixMeanOp,       # Matrix → Scalar
+    AutoMLMatrixNormOp,       # Matrix → Scalar
+    AutoMLMatrixAddOp,
+    AutoMLMatrixSubOp,
+    AutoMLScalarMatrixMulOp,  # Scalar × Matrix → Matrix
+    AutoMLMatrixMeanAxis0Op,  # Matrix → Vector (column profile)
+    
+    # CV (5 ops) - Feature extraction
+    CVGaussianBlurOp,         # Smoothing
+    CVSobelXOp,               # Vertical edge detection
+    CVSobelYOp,               # Horizontal edge detection
+    CVMaxPoolOp,              # Downsampling (preserves edges)
+    CVAvgPoolOp,              # Downsampling (smooths)
+]
+
 # ==================== OPERATION REGISTRY ====================
 
 # All scalar operations

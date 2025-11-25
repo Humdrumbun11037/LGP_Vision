@@ -61,8 +61,10 @@ evolution:
 # Operations Configuration
 # Which operation sets to include
 operations:
-  use_automl: true  # Include AutoML operations
-  use_cv: true      # Include Computer Vision operations
+  use_minimal: true   # Use minimal 24-op set (carefully selected for FlappyBird)
+                      # If true, use_automl and use_cv are ignored
+  use_automl: true    # Include AutoML operations (only if use_minimal=false)
+  use_cv: true        # Include Computer Vision operations (only if use_minimal=false)
 
 # Output Configuration
 # Settings for saving results

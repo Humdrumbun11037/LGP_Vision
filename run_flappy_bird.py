@@ -10,7 +10,7 @@ import time
 import gymnasium as gym
 from memory_system import MemoryConfig
 from instruction_set import InstructionSet
-from operation import AUTOML_ALL_OPS, CV_ALL_OPS
+from operation import AUTOML_ALL_OPS, CV_ALL_OPS, FLAPPYBIRD_MINIMAL_OPS
 from population import Population, PopulationConfig
 from operators import GeneticOperators
 from evaluator import FlappyBirdEvaluator, FlappyBirdEvaluatorConfig
@@ -66,20 +66,30 @@ def main(config_path: str = "config.yaml"):
     print(f"\nMemory config: {memory_cfg}")
     
     # Setup operations based on config
-    all_ops = []
-    if ops_config['use_automl']:
-        all_ops.extend(AUTOML_ALL_OPS)
-    if ops_config['use_cv']:
-        all_ops.extend(CV_ALL_OPS)
+    if ops_config.get('use_minimal', False):
+        # Use carefully selected minimal 27-operation set
+        all_ops = FLAPPYBIRD_MINIMAL_OPS
+        print(f"\nUsing MINIMAL operation set: {len(all_ops)} operations")
+        print("  - 8 scalar arithmetic ops (add, sub, mul, div, min, max, abs, heaviside)")
+        print("  - 3 scalar trig ops (sin, cos, arctan)")
+        print("  - 5 vector ops (intermediate processing)")
+        print("  - 6 matrix ops (image manipulation)")
+        print("  - 5 CV ops (feature extraction)")
+    else:
+        # Use full operation sets
+        all_ops = []
+        if ops_config['use_automl']:
+            all_ops.extend(AUTOML_ALL_OPS)
+        if ops_config['use_cv']:
+            all_ops.extend(CV_ALL_OPS)
+        print(f"\nTotal operations: {len(all_ops)}")
+        if ops_config['use_automl']:
+            print(f"  - AutoML operations: {len(AUTOML_ALL_OPS)}")
+        if ops_config['use_cv']:
+            print(f"  - CV operations: {len(CV_ALL_OPS)}")
     
     instruction_set = InstructionSet([op() for op in all_ops], memory_cfg)
     operators = GeneticOperators(instruction_set, rng)
-
-    print(f"Total operations: {len(all_ops)}")
-    if ops_config['use_automl']:
-        print(f"  - AutoML operations: {len(AUTOML_ALL_OPS)}")
-    if ops_config['use_cv']:
-        print(f"  - CV operations: {len(CV_ALL_OPS)}")
 
     # Create FlappyBird evaluator
     evaluator = FlappyBirdEvaluator(config=eval_config)
