@@ -1,0 +1,10 @@
+flappy_bird_env==0.1.6
+gymnasium==1.2.2
+matplotlib==3.8.1
+numpy==2.3.5
+pygame==2.6.1
+PyYAML==6.0
+PyYAML==6.0.3
+scipy==1.16.3
+torch==2.2.2
+torchvision==0.24.1

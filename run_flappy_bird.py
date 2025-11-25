@@ -5,6 +5,8 @@ import flappy_bird_env  # noqa
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
+import time
+import sys
 from pathlib import Path
 
 import gymnasium as gym
@@ -13,65 +15,81 @@ from instruction_set import InstructionSet
 from operation import AUTOML_ALL_OPS, CV_ALL_OPS
 from population import Population, PopulationConfig
 from operators import GeneticOperators
-from evaluator import FlappyBirdEvaluator
+from evaluator import FlappyBirdEvaluator, FlappyBirdEvaluatorConfig
 from evolution_engine import EvolutionEngine, EvolutionConfig
 
+# Import config loader
+from config_loader import (
+    load_config,
+    create_memory_config,
+    create_evaluator_config,
+    create_population_config,
+    create_evolution_config,
+    get_operations_config,
+    get_output_config,
+)
 
-def main():
-    """Run FlappyBird evolution."""
-    # Setup random seed
-    rng = np.random.default_rng(0)
 
-    # Memory configuration for FlappyBird
-    patch_size = 37  # Based on quantization_factor=0.05
-    memory_cfg = MemoryConfig(
-        n_scalar=8,          # Working scalars (for computation)
-        n_vector=8,          # Working vectors
-        n_matrix=8,          # Working matrices (for CV operations)
-        n_obs_scalar=0,      # No scalar observations (using matrices instead)
-        n_obs_vector=0,      # No vector observations
-        n_obs_matrix=1,      # Matrix observation register
-        vector_size=37,
-        matrix_shape=(patch_size, patch_size),
-    )
+def main(config_path: str = "config.yaml"):
+    """Run FlappyBird evolution.
+    
+    Args:
+        config_path: Path to YAML configuration file
+    """
+    # Load configuration from YAML
+    print(f"Loading configuration from: {config_path}")
+    config = load_config(config_path)
+    
+    # Setup random seed from config
+    random_seed = config.get('random_seed', 42)
+    rng = np.random.default_rng(random_seed)
+    print(f"Random seed: {random_seed}")
 
-    # Use AutoML + CV operations for image processing
-    all_ops = AUTOML_ALL_OPS + CV_ALL_OPS
+    # Setup headless mode if specified in config
+    eval_cfg = config.get('evaluator', {})
+    headless = eval_cfg.get('headless', True)
+    
+    # Create configurations from YAML
+    memory_cfg = create_memory_config(config)
+    eval_config = create_evaluator_config(config)
+    
+    # Setup pygame for headless mode if needed
+    if headless or eval_config.render_mode == "rgb_array":
+        import os
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        print("Running in headless mode (no windows will be displayed)")
+    else:
+        print("Running with human rendering (windows will be displayed)")
+    pop_config = create_population_config(config)
+    evolution_config = create_evolution_config(config)
+    ops_config = get_operations_config(config)
+    output_config = get_output_config(config)
+
+    print(f"\nMemory config: {memory_cfg}")
+    
+    # Setup operations based on config
+    all_ops = []
+    if ops_config['use_automl']:
+        all_ops.extend(AUTOML_ALL_OPS)
+    if ops_config['use_cv']:
+        all_ops.extend(CV_ALL_OPS)
+    
     instruction_set = InstructionSet([op() for op in all_ops], memory_cfg)
     operators = GeneticOperators(instruction_set, rng)
 
-    print(f"Memory config: {memory_cfg}")
     print(f"Total operations: {len(all_ops)}")
-    print(f"  - AutoML operations: {len(AUTOML_ALL_OPS)}")
-    print(f"  - CV operations: {len(CV_ALL_OPS)}")
+    if ops_config['use_automl']:
+        print(f"  - AutoML operations: {len(AUTOML_ALL_OPS)}")
+    if ops_config['use_cv']:
+        print(f"  - CV operations: {len(CV_ALL_OPS)}")
 
-    # Create FlappyBird evaluator for evolution (no rendering for speed)
-    evaluator = FlappyBirdEvaluator(
-        env_id="FlappyBird-v0",
-        episodes=5,  # Number of episodes per evaluation
-        max_steps=500,
-        output_register=0,  # Read action from scalar register 0
-        render_mode="rgb_array",   # No rendering for speed
-        rng=rng,
-        # Image processing parameters
-        patch_strategy="quantized",
-        color_channel=1,  # Green channel
-        normalize=True,
-        quantization_factor=0.05,
-    )
+    # Create FlappyBird evaluator
+    evaluator = FlappyBirdEvaluator(config=eval_config)
 
     print("\nFlappyBird Evaluator created!")
     print(f"  Strategy: {evaluator.patch_strategy}")
     print(f"  Color channel: {evaluator.color_channel} (G)")
     print(f"  Episodes per evaluation: {evaluator.episodes}")
-
-    # Population configuration
-    pop_config = PopulationConfig(
-        size=5,
-        program_length=(1, 10),
-        elitism=1,
-        max_program_length=250,
-    )
 
     # Create population
     population = Population(
@@ -88,16 +106,14 @@ def main():
     print(f"Program length range: {pop_config.program_length}")
     print(f"Episodes per evaluation: {evaluator.episodes}")
     print(f"Max steps per episode: {evaluator.max_steps}")
-
-    # Evolution configuration
-    evolution_config = EvolutionConfig(
-        max_generations=5,
-        mutation_threshold=0.9,
-        constant_mutation_rate=0.1,
-        verbose=True,
-        checkpoint_path="checkpoints/best_population.pkl",
-        stats_log_dir="stats_log",
-    )
+    if evaluator.config and evaluator.config.n_jobs is not None:
+        if evaluator.config.n_jobs == 1:
+            print(f"Parallelization: Sequential (n_jobs=1)")
+        else:
+            print(f"Parallelization: {evaluator.config.n_jobs} workers")
+    else:
+        from multiprocessing import cpu_count
+        print(f"Parallelization: Auto-detect ({cpu_count()} CPUs available)")
 
     # Create and run evolution engine
     engine = EvolutionEngine(
@@ -110,9 +126,19 @@ def main():
 
     print("\nStarting evolution...")
     print("=" * 60)
+    
+    # Time the evolution cycle
+    start_time = time.time()
     final_population = engine.run()
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    
     print("=" * 60)
     print("\nEvolution complete!")
+    print(f"Total evolution time: {elapsed_time:.2f} seconds ({elapsed_time/60:.2f} minutes)")
+    if evolution_config.max_generations > 0:
+        avg_time_per_gen = elapsed_time / evolution_config.max_generations
+        print(f"Average time per generation: {avg_time_per_gen:.2f} seconds")
 
     # Close evaluator
     evaluator.close()
@@ -120,14 +146,19 @@ def main():
     # Get and display best agent
     best_agent = get_best_agent(final_population)
     if best_agent:
-        print_best_agent_info(best_agent, final_population, evaluator)
+        print_best_agent_info(best_agent, final_population, evaluator, memory_cfg)
         
-        # Optionally save best agent to file
-        save_best_agent(best_agent, final_population)
+        # Save best agent if configured
+        if output_config.get('save_best_agent', True):
+            save_best_agent(
+                best_agent, 
+                final_population, 
+                output_config.get('best_agent_dir', 'best_agents')
+            )
 
     # Generate fitness chart
     print("\nGenerating fitness chart...")
-    plot_fitness_chart(engine)
+    plot_fitness_chart(engine, output_config.get('fitness_chart_path', 'fitness_chart.png'))
 
     print("\nRun complete!")
     
@@ -146,7 +177,7 @@ def get_best_agent(population):
         return population.get_best()
 
 
-def print_best_agent_info(best_agent, population, evaluator):
+def print_best_agent_info(best_agent, population, evaluator,memory_cfg):
     """Print detailed information about the best agent."""
     print(f"\n{'='*70}")
     print("BEST AGENT INFORMATION")
@@ -168,14 +199,20 @@ def print_best_agent_info(best_agent, population, evaluator):
     
     print(f"\nProgram instructions:")
     for i, instr in enumerate(best_agent.program.instructions):
-        print(f"  {i:3d}: {instr}")
+        print(f"  {i:3d}: {instr.to_resolved_str(memory_cfg)}")
     print(f"{'='*70}")
 
 
-def save_best_agent(best_agent, population):
-    """Save the best agent to a pickle file."""
-    output_dir = Path("best_agents")
-    output_dir.mkdir(exist_ok=True)
+def save_best_agent(best_agent, population, output_dir="best_agents"):
+    """Save the best agent to a pickle file.
+    
+    Args:
+        best_agent: The best agent Individual to save
+        population: Population object containing generation info
+        output_dir: Directory to save the agent file (default: "best_agents")
+    """
+    output_path = Path(output_dir)
+    output_path.mkdir(exist_ok=True, parents=True)
     
     # Create filename with fitness and generation info
     fitness_str = f"{best_agent.fitness:.4f}".replace(".", "_")
@@ -184,18 +221,23 @@ def save_best_agent(best_agent, population):
         gen_str = f"_gen{population.best_ever_generation}"
     
     filename = f"best_agent_fitness_{fitness_str}{gen_str}.pkl"
-    output_path = output_dir / filename
+    file_path = output_path / filename
     
     try:
-        with open(output_path, 'wb') as f:
+        with open(file_path, 'wb') as f:
             pickle.dump(best_agent, f)
-        print(f"\nBest agent saved to: {output_path}")
+        print(f"\nBest agent saved to: {file_path}")
     except Exception as e:
         print(f"\nWarning: Failed to save best agent: {e}")
 
 
-def plot_fitness_chart(engine):
-    """Plot fitness chart from evolution results."""
+def plot_fitness_chart(engine, output_path="fitness_chart.png"):
+    """Plot fitness chart from evolution results.
+    
+    Args:
+        engine: EvolutionEngine object containing evolution history
+        output_path: Path to save the fitness chart (default: "fitness_chart.png")
+    """
     if len(engine.best_agent_history) == 0:
         print("No data to plot.")
         return
@@ -261,9 +303,10 @@ def plot_fitness_chart(engine):
     plt.tight_layout()
     
     # Save figure
-    output_path = Path("fitness_chart.png")
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    print(f"Fitness chart saved to: {output_path}")
+    chart_path = Path(output_path)
+    chart_path.parent.mkdir(exist_ok=True, parents=True)
+    plt.savefig(chart_path, dpi=150, bbox_inches='tight')
+    print(f"Fitness chart saved to: {chart_path}")
     
     # Also display if possible
     try:
@@ -283,5 +326,7 @@ def plot_fitness_chart(engine):
 
 
 if __name__ == "__main__":
-    main()
+    # Allow config file to be passed as command-line argument
+    config_file = sys.argv[1] if len(sys.argv) > 1 else "config.yaml"
+    main(config_path=config_file)
 

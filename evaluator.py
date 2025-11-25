@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional, List, Tuple, Union
 
 import numpy as np
@@ -15,12 +16,44 @@ from memory_system import MemoryType
 
 from individual import Individual
 
-try:
-    from vision_encoder import MobileNetV2FeatureExtractor
-    VISION_ENCODER_AVAILABLE = True
-except ImportError:
-    VISION_ENCODER_AVAILABLE = False
-    MobileNetV2FeatureExtractor = None  
+# try:
+#     from vision_encoder import MobileNetV2FeatureExtractor
+#     VISION_ENCODER_AVAILABLE = True
+# except ImportError:
+#     VISION_ENCODER_AVAILABLE = False
+#     MobileNetV2FeatureExtractor = None
+
+
+@dataclass
+class BaseEvaluatorConfig:
+    """Base configuration for all evaluators."""
+    episodes: int = 1
+    rng_seed: Optional[int] = None
+    output_registers: Optional[List[Tuple[MemoryType, int]]] = None
+    n_jobs: Optional[int] = None  # Parallelization control: None=auto, 1=sequential, >1=workers
+
+
+@dataclass
+class CartPoleEvaluatorConfig(BaseEvaluatorConfig):
+    """Configuration for CartPole evaluator."""
+    env_id: str = "CartPole-v1"
+    max_steps: int = 500
+    output_register: int = 7
+    render_mode: Optional[str] = None
+
+
+@dataclass
+class FlappyBirdEvaluatorConfig(BaseEvaluatorConfig):
+    """Configuration for FlappyBird evaluator."""
+    env_id: str = "FlappyBird-v0"
+    max_steps: int = 1000
+    output_register: int = 0
+    render_mode: Optional[str] = "rgb_array"
+    patch_strategy: str = "quantized"  # "full_image", "quantized", or "feature_vector"
+    color_channel: int = 1  # 0=R, 1=G, 2=B, or -1 for grayscale
+    normalize: bool = True
+    quantization_factor: float = 0.5
+    feature_vector_size: int = 256  
 
 
 class FitnessEvaluator(ABC):
@@ -33,15 +66,14 @@ class FitnessEvaluator(ABC):
 
     def __init__(
         self,
-        episodes: int = 1,
-        rng: Optional[np.random.Generator] = None,
-        output_registers: Optional[List[Tuple[MemoryType, int]]] = None,
+        config: BaseEvaluatorConfig,
     ) -> None:
-        if episodes <= 0:
+        if config.episodes <= 0:
             raise ValueError("episodes must be positive")
-        self.episodes = episodes
-        self.rng = rng or np.random.default_rng()
-        self.output_registers: List[Tuple[MemoryType, int]] = output_registers or []
+        self.config = config
+        self.episodes = config.episodes
+        self.rng = np.random.default_rng(config.rng_seed) if config.rng_seed is not None else np.random.default_rng()
+        self.output_registers: List[Tuple[MemoryType, int]] = config.output_registers or []
 
     def evaluate(self, individual: 'Individual') -> float:
         rewards = [
@@ -62,8 +94,13 @@ class SymbolicRegressionEvaluator(FitnessEvaluator):
     - Fitness is negative absolute error so that higher is better.
     """
 
-    def __init__(self, rng: Optional[np.random.Generator] = None) -> None:
-        super().__init__(episodes=5, rng=rng, output_registers=[(MemoryType.SCALAR, 0)])
+    def __init__(self, config: Optional[BaseEvaluatorConfig] = None) -> None:
+        if config is None:
+            config = BaseEvaluatorConfig(
+                episodes=5,
+                output_registers=[(MemoryType.SCALAR, 0)]
+            )
+        super().__init__(config)
 
     def _evaluate_episode(self, individual: 'Individual', episode_idx: int) -> float:
         memory = individual.memory.copy()
@@ -89,25 +126,26 @@ class CartPoleEvaluator(FitnessEvaluator):
 
     def __init__(
         self,
-        env_id: str = "CartPole-v1",
-        episodes: int = 10,
-        max_steps: int = 500,
-        output_register: int = 7,
-        render_mode: Optional[str] = None,
-        rng: Optional[np.random.Generator] = None,
+        config: CartPoleEvaluatorConfig,
     ) -> None:
         if gym is None:
             raise ImportError("gymnasium is required for CartPoleEvaluator")
-        super().__init__(
-            episodes=episodes,
-            rng=rng,
-            output_registers=[(MemoryType.SCALAR, output_register)],
-        )
-        self.env = gym.make(env_id, render_mode=render_mode)
-        self.max_steps = max_steps
-        self.output_register = output_register
-        self.env_id = env_id
-        self.render_mode = render_mode
+        
+        self.config = config
+        
+        # CRITICAL: Set output_registers if not provided in config
+        # This is needed for effective program calculation (intron removal)
+        # If output_registers is None, derive it from output_register
+        if config.output_registers is None:
+            from memory_system import MemoryType
+            config.output_registers = [(MemoryType.SCALAR, config.output_register)]
+        
+        super().__init__(config)
+        self.env = gym.make(config.env_id, render_mode=config.render_mode)
+        self.max_steps = config.max_steps
+        self.output_register = config.output_register
+        self.env_id = config.env_id
+        self.render_mode = config.render_mode
 
     def close(self) -> None:
         if hasattr(self, "env") and self.env is not None:
@@ -117,8 +155,17 @@ class CartPoleEvaluator(FitnessEvaluator):
         self.close()
 
     def _evaluate_episode(self, individual: 'Individual', episode_idx: int) -> float:
+        # Seed each episode differently to ensure variety
+        # Use episode_idx to get different episodes even with same base seed
+        episode_seed = None
+        if self.config.rng_seed is not None:
+            # Use config seed + episode index (deterministic and unique per worker)
+            episode_seed = int((self.config.rng_seed + episode_idx * 100) % (2**31))
         
-        observation, _ = self.env.reset()
+        if episode_seed is not None:
+            observation, _ = self.env.reset(seed=episode_seed)
+        else:
+            observation, _ = self.env.reset()
         observation = np.asarray(observation, dtype=np.float32)
 
         memory = individual.memory.copy()
@@ -152,25 +199,7 @@ class FlappyBirdEvaluator(FitnessEvaluator):
 
     def __init__(
         self,
-        env_id: str = "FlappyBird-v0",
-        episodes: int = 10,
-        max_steps: int = 1000,
-        output_register: int = 7,
-        render_mode: Optional[str] = None,
-        rng: Optional[np.random.Generator] = None,
-        # Image processing parameters
-        patch_strategy: str = "full_image",  # "full_image", "quantized", or "feature_vector"
-        # Note: For "full_image" strategy, returns a single 700x700 observation:
-        #       crops to 700x576 (removes top/bottom 50px), pads to 700x700 (62px each side).
-        # Note: For "quantized" strategy:
-        #       1. Trims bottom 50 rows (green channel only) -> 750 rows by 576 pixels
-        #       2. Quantizes by quantization_factor -> (750*factor) x (576*factor)
-        #       3. Stretches horizontally to create square matrix -> (750*factor) x (750*factor)
-        # Note: For "feature_vector" strategy, uses MobileNetV2 to extract feature vectors (returns vector observations).
-        color_channel: int = 1,  # 0=R, 1=G, 2=B, or -1 for grayscale (mean). Only used for "full_image" and "quantized" strategies.
-        normalize: bool = True,  # Normalize to [0, 1]. Only used for "full_image" and "quantized" strategies.
-        quantization_factor: float = 0.5,  # Factor to downsample by (0.5 = half resolution). Only used for "quantized" strategy.
-        feature_vector_size: int = 256,  # Feature vector dimension. Only used for "feature_vector" strategy.
+        config: FlappyBirdEvaluatorConfig,
     ) -> None:
         if gym is None:
             raise ImportError("gymnasium is required for FlappyBirdEvaluator")
@@ -180,42 +209,47 @@ class FlappyBirdEvaluator(FitnessEvaluator):
             raise ImportError("flappy-bird-env is required for FlappyBirdEvaluator")
         
         # Validate patch_strategy
-        if patch_strategy not in ["full_image", "quantized", "feature_vector"]:
+        if config.patch_strategy not in ["full_image", "quantized", "feature_vector"]:
             raise ValueError(
-                f"Unknown patch_strategy: {patch_strategy}. "
+                f"Unknown patch_strategy: {config.patch_strategy}. "
                 f"Must be 'full_image', 'quantized', or 'feature_vector'"
             )
         
         # Validate feature_vector strategy requirements
-        if patch_strategy == "feature_vector":
+        if config.patch_strategy == "feature_vector":
             if not VISION_ENCODER_AVAILABLE:
                 raise ImportError(
                     "MobileNetV2FeatureExtractor is required for 'feature_vector' strategy. "
                     "Install PyTorch and torchvision: pip install torch torchvision"
                 )
         
-        super().__init__(
-            episodes=episodes,
-            rng=rng,
-            output_registers=[(MemoryType.SCALAR, output_register)],
-        )
-        self.env = gym.make(env_id, render_mode=render_mode)
-        self.max_steps = max_steps
-        self.output_register = output_register
-        self.env_id = env_id
-        self.render_mode = render_mode
+        self.config = config
+        
+        # CRITICAL: Set output_registers if not provided in config
+        # This is needed for effective program calculation (intron removal)
+        # If output_registers is None, derive it from output_register
+        if config.output_registers is None:
+            from memory_system import MemoryType
+            config.output_registers = [(MemoryType.SCALAR, config.output_register)]
+        
+        super().__init__(config)
+        self.env = gym.make(config.env_id, render_mode=config.render_mode)
+        self.max_steps = config.max_steps
+        self.output_register = config.output_register
+        self.env_id = config.env_id
+        self.render_mode = config.render_mode
         
         # Image processing configuration
-        self.patch_strategy = patch_strategy
-        self.color_channel = color_channel
-        self.normalize = normalize
-        self.quantization_factor = quantization_factor
-        self.feature_vector_size = feature_vector_size
+        self.patch_strategy = config.patch_strategy
+        self.color_channel = config.color_channel
+        self.normalize = config.normalize
+        self.quantization_factor = config.quantization_factor
+        self.feature_vector_size = config.feature_vector_size
         
         # Initialize feature extractor if using feature_vector strategy
-        if patch_strategy == "feature_vector":
+        if config.patch_strategy == "feature_vector":
             self.feature_extractor = MobileNetV2FeatureExtractor(
-                feature_size=feature_vector_size
+                feature_size=config.feature_vector_size
             )
         else:
             self.feature_extractor = None
@@ -415,7 +449,17 @@ class FlappyBirdEvaluator(FitnessEvaluator):
             return matrix_observations, 'matrix'
 
     def _evaluate_episode(self, individual: 'Individual', episode_idx: int) -> float:
-        observation, _ = self.env.reset()
+        # Seed each episode differently to ensure variety
+        # Use episode_idx to get different episodes even with same base seed
+        episode_seed = None
+        if self.config.rng_seed is not None:
+            # Use config seed + episode index (deterministic and unique per worker)
+            episode_seed = int((self.config.rng_seed + episode_idx * 100) % (2**31))
+        
+        if episode_seed is not None:
+            observation, _ = self.env.reset(seed=episode_seed)
+        else:
+            observation, _ = self.env.reset()
         observation = np.asarray(observation, dtype=np.float32)
 
         memory = individual.memory.copy()
@@ -490,7 +534,8 @@ if __name__ == "__main__":
     # print("Symbolic regression fitness:", fitness)
 
     if gym is not None:
-        cartpole_eval = CartPoleEvaluator(episodes=2, rng=rng)
+        cartpole_config = CartPoleEvaluatorConfig(episodes=2, rng_seed=0)
+        cartpole_eval = CartPoleEvaluator(config=cartpole_config)
         # Ensure individual has properly sized memory for cartpole; reuse existing for demo.
         cartpole_fitness = cartpole_eval.evaluate(individual)
         print("CartPole fitness:", cartpole_fitness)

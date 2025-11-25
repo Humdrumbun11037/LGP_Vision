@@ -73,7 +73,9 @@ class EvolutionEngine:
     def run(self) -> Population:
         for gen in range(self.config.max_generations):
             # evaluate all 
-            self.population.evaluate_all(self.evaluator, verbose=self.config.verbose)
+            # Get n_jobs from evaluator config
+            n_jobs = self.evaluator.config.n_jobs
+            self.population.evaluate_all(self.evaluator, verbose=self.config.verbose, n_jobs=n_jobs)
 
             # Track best-ever Individual (population is evaluated)
             current_best = self.population.get_best()
@@ -141,7 +143,7 @@ class EvolutionEngine:
                         self.operators.mutate_constants(child2.memory, self.rng)
                         
                     child1.invalidate_fitness()
-                    child2.invalidate_fitness
+                    child2.invalidate_fitness()
                     offspring.append(child1)
                     offspring.append(child2)
 
@@ -421,11 +423,14 @@ if __name__ == "__main__":
     population = Population(pop_config, instr_set, memory_cfg, operators=operators, rng=rng)
     population.initialize_random(mutate_constants=True)
 
+    from evaluator import BaseEvaluatorConfig
+    
     class DummyEvaluator(FitnessEvaluator):
         def _evaluate_episode(self, individual, episode_idx):
             return self.rng.normal()
 
-    evaluator = DummyEvaluator(rng=rng)
+    dummy_config = BaseEvaluatorConfig(episodes=1, rng_seed=0)
+    evaluator = DummyEvaluator(config=dummy_config)
 
     engine = EvolutionEngine(
         population=population,

@@ -1,0 +1,88 @@
+# Data files and outputs
+stats_log/
+checkpoints/
+best_agents/
+*.pkl
+*.csv
+
+# Generated outputs
+fitness_chart.png
+*.png
+*.pdf
+*.pptx
+*.pptm
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+env/
+venv/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+$SLURM_TMPDIR/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Temporary files
+*.tmp
+*.log
+*.txt
+!requirements.txt
+!README.txt
+
+# SLURM output files
+*.out
+*.err
+evolution_*.out
+evolution_*.err
+
+# Test outputs
+test_outputs/
+test_results/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+

@@ -1,0 +1,6 @@
+generation,best_fitness,mean_fitness,min_fitness,max_fitness,std_fitness,best_effective_code_rate,best_total_length,best_effective_length,mean_program_length,std_program_length,best_ever_fitness,best_ever_generation
+0,-inf,-inf,-inf,-inf,nan,0.0,9,0,4.8,2.7856776554368237,-inf,0
+1,-inf,-inf,-inf,-inf,nan,0.0,9,0,5.2,2.7856776554368237,-inf,0
+2,-inf,-inf,-inf,-inf,nan,0.0,9,0,5.0,2.449489742783178,-inf,0
+3,-inf,-inf,-inf,-inf,nan,0.0,9,0,5.4,2.8705400188814645,-inf,0
+4,-inf,-inf,-inf,-inf,nan,0.0,9,0,4.8,2.85657137141714,-inf,0

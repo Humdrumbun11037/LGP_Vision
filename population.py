@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Dict
+from multiprocessing import Pool, cpu_count
 
 import numpy as np
 
@@ -14,6 +15,73 @@ from memory_system import MemoryConfig
 
 from evaluator import FitnessEvaluator
 from operators import GeneticOperators
+
+# Module-level worker function for multiprocessing (must be at module level for pickle)
+def _evaluate_worker(args: Tuple[int, Individual, type, dict]) -> Tuple[int, float]:
+    """Worker function for parallel evaluation.
+    
+    Args:
+        args: Tuple of (index, individual, EvaluatorClass, evaluator_kwargs)
+        
+    Returns:
+        Tuple of (index, fitness)
+    """
+    idx, individual, EvaluatorClass, evaluator_kwargs = args
+    
+    # CRITICAL: Give each worker a unique seed based on worker index
+    # This ensures each worker runs different episodes
+    import numpy as np
+    base_seed = evaluator_kwargs.get('rng_seed', None)
+    if base_seed is not None:
+        # Combine base seed with worker index for uniqueness
+        worker_seed = int((base_seed + idx * 1000) % (2**31))
+    else:
+        # If no base seed, use worker index as seed (ensures uniqueness)
+        worker_seed = int((idx * 1000 + 12345) % (2**31))
+    
+    # Update the config with unique seed for this worker
+    evaluator_kwargs = evaluator_kwargs.copy()  # Don't modify original
+    evaluator_kwargs['rng_seed'] = worker_seed
+    
+    # Create a fresh evaluator (and thus fresh environment) for this worker
+    # Check if we need to create a config object or use kwargs directly
+    from evaluator import (
+        BaseEvaluatorConfig, 
+        CartPoleEvaluatorConfig, 
+        FlappyBirdEvaluatorConfig
+    )
+    
+    try:
+        # Try to determine config type from EvaluatorClass
+        if EvaluatorClass.__name__ == 'FlappyBirdEvaluator':
+            # Create config object for FlappyBirdEvaluator with unique seed
+            config = FlappyBirdEvaluatorConfig(**evaluator_kwargs)
+            worker_evaluator = EvaluatorClass(config=config)
+        elif EvaluatorClass.__name__ == 'CartPoleEvaluator':
+            # Create config object for CartPoleEvaluator with unique seed
+            config = CartPoleEvaluatorConfig(**evaluator_kwargs)
+            worker_evaluator = EvaluatorClass(config=config)
+        else:
+            # For other evaluators, use kwargs directly
+            evaluator_kwargs['rng'] = np.random.default_rng(worker_seed)
+            worker_evaluator = EvaluatorClass(**evaluator_kwargs)
+    except Exception as e:
+        # Fallback: try direct kwargs (backward compatibility)
+        evaluator_kwargs['rng'] = np.random.default_rng(worker_seed)
+        worker_evaluator = EvaluatorClass(**evaluator_kwargs)
+    
+    try:
+        # Evaluate the individual
+        fitness = individual.evaluate(worker_evaluator)
+        return idx, fitness
+    except Exception as e:
+        # Return a very poor fitness on error
+        print(f"Warning: Evaluation failed for individual {idx}: {e}")
+        return idx, float('-inf')
+    finally:
+        # Cleanup
+        if hasattr(worker_evaluator, 'close'):
+            worker_evaluator.close()
 
 
 @dataclass
@@ -198,10 +266,76 @@ class Population:
     # ------------------------------------------------------------------
     # Evaluation
 
-    def evaluate_all(self, evaluator: 'FitnessEvaluator', verbose: bool = False) -> None:
+    def _extract_evaluator_config(self, evaluator: 'FitnessEvaluator') -> dict:
+        """Extract configuration from evaluator to recreate it in worker processes.
         
-        for idx, individual in enumerate(self.individuals):
-            individual.evaluate(evaluator)
+        Args:
+            evaluator: The evaluator instance to extract config from
+            
+        Returns:
+            Dictionary of parameters needed to recreate the evaluator
+        """
+        # Convert config dataclass to dict, but handle RNG seed properly
+        config_dict = evaluator.config.__dict__.copy()
+        # Don't pass output_registers if it's None (will be derived from output_register)
+        if config_dict.get('output_registers') is None:
+            config_dict.pop('output_registers', None)
+        return config_dict
+
+    def evaluate_all(
+        self, 
+        evaluator: 'FitnessEvaluator', 
+        verbose: bool = False,
+        n_jobs: Optional[int] = None
+    ) -> None:
+        """Evaluate all individuals in the population.
+        
+        Args:
+            evaluator: Fitness evaluator to use
+            verbose: Print progress updates
+            n_jobs: Number of parallel workers. None = auto-detect (use all CPUs),
+                    1 = sequential evaluation, >1 = use that many workers
+        """
+        if n_jobs == 1 or len(self.individuals) == 0:
+            # Sequential fallback
+            for idx, individual in enumerate(self.individuals):
+                individual.evaluate(evaluator)
+                if verbose and (idx + 1) % 10 == 0:
+                    print(f"Evaluated {idx + 1}/{len(self.individuals)} individuals")
+            return
+        
+        # Parallel evaluation
+        if n_jobs is None:
+            n_jobs = cpu_count()
+        
+        # Extract evaluator configuration
+        evaluator_config = self._extract_evaluator_config(evaluator)
+        evaluator_class = type(evaluator)
+        
+        # Prepare arguments for workers: (idx, individual, EvaluatorClass, config)
+        args_list = [
+            (idx, ind, evaluator_class, evaluator_config)
+            for idx, ind in enumerate(self.individuals)
+        ]
+        
+        # Evaluate in parallel
+        try:
+            with Pool(processes=n_jobs) as pool:
+                results = pool.map(_evaluate_worker, args_list)
+        except Exception as e:
+            if verbose:
+                print(f"Warning: Parallel evaluation failed: {e}")
+                print("Falling back to sequential evaluation...")
+            # Fallback to sequential
+            for idx, individual in enumerate(self.individuals):
+                individual.evaluate(evaluator)
+                if verbose and (idx + 1) % 10 == 0:
+                    print(f"Evaluated {idx + 1}/{len(self.individuals)} individuals")
+            return
+        
+        # Update fitness values from results
+        for idx, fitness in results:
+            self.individuals[idx].fitness = fitness
             if verbose and (idx + 1) % 10 == 0:
                 print(f"Evaluated {idx + 1}/{len(self.individuals)} individuals")
 
