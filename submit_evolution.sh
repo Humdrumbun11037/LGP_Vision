@@ -63,14 +63,16 @@ if [ -d "flappy-bird-env" ]; then
     pip install -e ./flappy-bird-env || {
         echo "WARNING: Editable install failed, trying regular install..."
         pip install --no-index -e ./flappy-bird-env || {
-            echo "ERROR: Failed to install flappy-bird-env. Exiting."
-            exit 1
+            echo "WARNING: pip install failed, but submodule exists."
+            echo "Code will attempt direct import from submodule path (fallback mode)."
         }
     }
-    echo "Verifying installation..."
+    echo "Verifying import (will work via pip install OR direct submodule import)..."
     python -c "import flappy_bird_env; print('✓ flappy_bird_env imported successfully')" || {
-        echo "ERROR: flappy_bird_env import failed after installation!"
-        pip list | grep flappy
+        echo "ERROR: flappy_bird_env import failed!"
+        echo "Checking if submodule structure is correct..."
+        ls -la flappy-bird-env/flappy_bird_env/ 2>/dev/null || echo "Submodule structure may be incorrect"
+        pip list | grep -E "flappy|gymnasium" || true
         exit 1
     }
 else
@@ -87,7 +89,7 @@ echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURM_NODELIST"
 echo "CPUs: $SLURM_CPUS_PER_TASK"
 echo "Memory per CPU: 128M (Total: ~4GB)"
-echo "Time limit: 48:00:00"
+echo "Time limit: 4:00:00"
 echo "Random seed: $seed"
 echo "=========================================="
 

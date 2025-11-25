@@ -201,12 +201,15 @@ class FlappyBirdEvaluator(FitnessEvaluator):
         self,
         config: FlappyBirdEvaluatorConfig,
     ) -> None:
-        if gym is None:
-            raise ImportError("gymnasium is required for FlappyBirdEvaluator")
-        try:
-            import flappy_bird_env  # noqa
-        except ImportError:
-            raise ImportError("flappy-bird-env is required for FlappyBirdEvaluator")
+        # Add flappy-bird-env submodule to path if it exists (for direct import without pip install)
+        import sys
+        from pathlib import Path
+        _submodule_path = Path(__file__).parent.parent / "flappy-bird-env"
+        if _submodule_path.exists() and str(_submodule_path) not in sys.path:
+            sys.path.insert(0, str(_submodule_path))
+        
+        import flappy_bird_env  # noqa
+       
         
         # Validate patch_strategy
         if config.patch_strategy not in ["full_image", "quantized", "feature_vector"]:

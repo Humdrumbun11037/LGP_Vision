@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """Run FlappyBird evolution and generate fitness chart."""
 
+import sys
+from pathlib import Path
+
+# Add flappy-bird-env submodule to path if it exists (for direct import without pip install)
+_submodule_path = Path(__file__).parent / "flappy-bird-env"
+if _submodule_path.exists() and str(_submodule_path) not in sys.path:
+    sys.path.insert(0, str(_submodule_path))
+
 import flappy_bird_env  # noqa
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
 import time
-import sys
-from pathlib import Path
 
 import gymnasium as gym
 from memory_system import MemoryConfig
