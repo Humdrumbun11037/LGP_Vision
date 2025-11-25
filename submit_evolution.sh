@@ -44,13 +44,13 @@ echo "Checking for flappy-bird-env submodule..."
 if [ ! -d "flappy-bird-env" ] || [ -z "$(ls -A flappy-bird-env 2>/dev/null)" ]; then
     echo "WARNING: flappy-bird-env submodule not found. Initializing..."
     git submodule update --init --recursive
-    if [ ! -d "flappy-bird-env" ]; then
-        echo "ERROR: Failed to initialize submodule. Trying alternative installation..."
-        # Fallback: try installing from PyPI if available
-        pip install flappy-bird-env || {
-            echo "ERROR: Could not install flappy-bird-env. Exiting."
-            exit 1
-        }
+    if [ ! -d "flappy-bird-env" ] || [ -z "$(ls -A flappy-bird-env 2>/dev/null)" ]; then
+        echo "ERROR: Failed to initialize flappy-bird-env submodule!"
+        echo "Please ensure:"
+        echo "  1. You've pulled the latest changes: git pull"
+        echo "  2. The submodule is initialized: git submodule update --init --recursive"
+        echo "  3. The .gitmodules file exists in the repository"
+        exit 1
     fi
 fi
 
@@ -58,14 +58,10 @@ fi
 if [ -d "flappy-bird-env" ]; then
     echo "flappy-bird-env directory found:"
     ls -la flappy-bird-env/ | head -5
-    echo "Installing flappy-bird-env from local submodule..."
-    # Try without --no-index first (in case it needs to install dependencies)
-    pip install -e ./flappy-bird-env || {
-        echo "WARNING: Editable install failed, trying regular install..."
-        pip install --no-index -e ./flappy-bird-env || {
-            echo "WARNING: pip install failed, but submodule exists."
-            echo "Code will attempt direct import from submodule path (fallback mode)."
-        }
+    echo "Attempting to install flappy-bird-env from local submodule (optional)..."
+    # Try pip install (may fail, but that's OK - we have direct import fallback)
+    pip install -e ./flappy-bird-env 2>/dev/null || {
+        echo "NOTE: pip install failed (this is OK - using direct import from submodule)"
     }
     echo "Verifying import (will work via pip install OR direct submodule import)..."
     python -c "import flappy_bird_env; print('✓ flappy_bird_env imported successfully')" || {
