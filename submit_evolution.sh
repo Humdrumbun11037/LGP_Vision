@@ -4,7 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
-#SBATCH --mem-per-cpu=128M
+#SBATCH --mem-per-cpu=1G
 #SBATCH --time=08:00:00
 #SBATCH --output=evolution_%j.out
 #SBATCH --error=evolution_%j.err

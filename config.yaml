@@ -37,7 +37,7 @@ evaluator:
   feature_vector_size: 256    # Feature vector dimension for feature_vector strategy
   
   # Parallelization
-  n_jobs: null  # Number of parallel workers: null=auto-detect, 1=sequential, >1=number of workers
+  n_jobs: 32  # Number of parallel workers (match SLURM --cpus-per-task)
 
 # Population Configuration
 # Settings for the evolutionary population
