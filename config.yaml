@@ -68,8 +68,11 @@ operations:
 
 # Output Configuration
 # Settings for saving results
+# Note: All output files include timestamps for unique identification
+# Example: best_agent_20251126_143052_fitness_0_1234_gen5.pkl
+#          fitness_chart_20251126_143052.png
 output:
   save_best_agent: true              # Whether to save best agent to file
-  best_agent_dir: "best_agents"      # Directory to save best agent files
-  fitness_chart_path: "fitness_chart.png"  # Path to save fitness chart
+  best_agent_dir: "best_agents"      # Directory for best agent files (timestamped)
+  fitness_chart_path: "fitness_chart.png"  # Base path for fitness chart (timestamp added automatically)
 
