@@ -10,6 +10,7 @@ matplotlib.use('Agg')  # Use non-interactive backend (no display needed)
 import matplotlib.pyplot as plt
 import pickle
 import time
+from datetime import datetime
 
 import gymnasium as gym
 from memory_system import MemoryConfig
@@ -168,9 +169,13 @@ def main(config_path: str = "config.yaml"):
                 output_config.get('best_agent_dir', 'best_agents')
             )
 
-    # Generate fitness chart
+    # Generate fitness chart with timestamp
     print("\nGenerating fitness chart...")
-    plot_fitness_chart(engine, output_config.get('fitness_chart_path', 'fitness_chart.png'))
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_chart_path = output_config.get('fitness_chart_path', 'fitness_chart.png')
+    chart_path = Path(base_chart_path)
+    timestamped_chart_path = chart_path.parent / f"{chart_path.stem}_{timestamp}{chart_path.suffix}"
+    plot_fitness_chart(engine, str(timestamped_chart_path))
 
     print("\nRun complete!")
     
