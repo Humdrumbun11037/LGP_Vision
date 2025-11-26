@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Run FlappyBird evolution and generate fitness chart."""
 
+import sys
+from pathlib import Path
 import flappy_bird_env  # noqa
 import numpy as np
 import matplotlib.pyplot as plt
