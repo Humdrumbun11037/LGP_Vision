@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 import flappy_bird_env  # noqa
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend (no display needed)
 import matplotlib.pyplot as plt
 import pickle
 import time
@@ -316,13 +318,8 @@ def plot_fitness_chart(engine, output_path="fitness_chart.png"):
     chart_path = Path(output_path)
     chart_path.parent.mkdir(exist_ok=True, parents=True)
     plt.savefig(chart_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)  # Clean up memory
     print(f"Fitness chart saved to: {chart_path}")
-    
-    # Also display if possible
-    try:
-        plt.show()
-    except Exception:
-        print("(Display not available, chart saved to file)")
 
     # Print summary statistics
     print(f"\n{'='*60}")
