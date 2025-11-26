@@ -13,8 +13,8 @@ memory:
   n_obs_scalar: 0      # Number of scalar observation registers
   n_obs_vector: 0      # Number of vector observation registers
   n_obs_matrix: 1      # Number of matrix observation registers
-  vector_size: 37      # Size of vector registers
-  matrix_shape: [37, 37]  # Shape of matrix registers [height, width]
+  vector_size: 22      # Size of vector registers
+  matrix_shape: [22, 22]  # Shape of matrix registers [height, width]
                          # Note: patch_size = 37 is calculated from quantization_factor=0.05
                          # (int(750 * 0.05) = 37)
 
@@ -33,7 +33,7 @@ evaluator:
   patch_strategy: "quantized"  # Strategy: "full_image", "quantized", or "feature_vector"
   color_channel: 2           # Color channel: 0=R, 1=G, 2=B, -1=grayscale
   normalize: true             # Normalize pixel values to [0, 1]
-  quantization_factor: 0.05   # Downsampling factor for quantized strategy
+  quantization_factor: 0.03   # Downsampling factor for quantized strategy
   feature_vector_size: 256    # Feature vector dimension for feature_vector strategy
   
   # Parallelization
@@ -42,9 +42,9 @@ evaluator:
 # Population Configuration
 # Settings for the evolutionary population
 population:
-  size: 5                   # Population size
-  program_length: [1, 10]     # Program length range [min, max]
-  elitism: 2                 # Number of elite individuals to preserve
+  size: 1000                   # Population size
+  program_length: [10, 100]     # Program length range [min, max]
+  elitism: 500                # Number of elite individuals to preserve
   max_program_length: null     # Maximum program length (null for no limit)
 
 # Evolution Configuration
