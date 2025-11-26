@@ -11,8 +11,8 @@ scipy>=1.14.0
 gymnasium>=0.29.0
 pygame>=2.5.0
 
-# Image processing (cluster has dummy package that bridges to module-loaded opencv)
-opencv-python>=4.0.0
+# Image processing - provided by 'module load opencv' on cluster
+# opencv-python is excluded in submit_evolution.sh grep command
 
 # Plotting and visualization
 matplotlib>=3.8.0

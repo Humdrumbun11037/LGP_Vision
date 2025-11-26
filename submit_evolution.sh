@@ -19,9 +19,11 @@ cd "$SLURM_SUBMIT_DIR" || {
 
 seed=${1:-42}
 
-# Load required modules
+# Load required modules BEFORE creating virtualenv
+# See: https://docs.alliancecan.ca/wiki/OpenCV
+module load gcc/12.3
 module load python/3.10
-module load opencv       # Required for cv2
+module load opencv/4.8.1
 
 # Create virtual environment with system site-packages (for opencv access)
 virtualenv --no-download --system-site-packages $SLURM_TMPDIR/env
@@ -30,9 +32,16 @@ source $SLURM_TMPDIR/env/bin/activate
 # Upgrade pip
 pip install --no-index --upgrade pip
 
-# Install packages (excluding flappy-bird-env - it's now part of the repo)
-grep -v "flappy-bird-env" requirements.txt > $SLURM_TMPDIR/requirements_wheelhouse.txt
+# Install packages (excluding opencv-python since it's provided by module)
+# Also exclude flappy-bird-env since it's in the repo
+grep -v "flappy-bird-env\|opencv" requirements.txt > $SLURM_TMPDIR/requirements_wheelhouse.txt
 pip install --no-index -r $SLURM_TMPDIR/requirements_wheelhouse.txt
+
+# Verify cv2 is available from module
+python -c "import cv2; print(f'✓ cv2 version: {cv2.__version__}')" || {
+    echo "ERROR: cv2 not available!"
+    exit 1
+}
 
 # Verify flappy_bird_env package exists (it's now part of the repo)
 if [ ! -d "flappy_bird_env" ]; then
