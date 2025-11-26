@@ -8,6 +8,7 @@ best_agents/
 # Generated outputs
 fitness_chart.png
 *.png
+!flappy_bird_env/images/*.png
 *.pdf
 *.pptx
 *.pptm
