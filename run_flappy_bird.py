@@ -231,13 +231,14 @@ def save_best_agent(best_agent, population, output_dir="best_agents"):
     output_path = Path(output_dir)
     output_path.mkdir(exist_ok=True, parents=True)
     
-    # Create filename with fitness and generation info
+    # Create filename with timestamp, fitness and generation info
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     fitness_str = f"{best_agent.fitness:.4f}".replace(".", "_")
     gen_str = ""
     if population.best_ever is not None and best_agent.id == population.best_ever.id:
         gen_str = f"_gen{population.best_ever_generation}"
     
-    filename = f"best_agent_fitness_{fitness_str}{gen_str}.pkl"
+    filename = f"best_agent_{timestamp}_fitness_{fitness_str}{gen_str}.pkl"
     file_path = output_path / filename
     
     try:
