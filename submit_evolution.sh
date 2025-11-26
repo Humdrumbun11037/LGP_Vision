@@ -19,11 +19,12 @@ cd "$SLURM_SUBMIT_DIR" || {
 
 seed=${1:-42}
 
-# Load Python module
+# Load required modules
 module load python/3.10
+module load opencv       # Required for cv2
 
-# Create virtual environment
-virtualenv --no-download $SLURM_TMPDIR/env
+# Create virtual environment with system site-packages (for opencv access)
+virtualenv --no-download --system-site-packages $SLURM_TMPDIR/env
 source $SLURM_TMPDIR/env/bin/activate
 
 # Upgrade pip
