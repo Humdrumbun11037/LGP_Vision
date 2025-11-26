@@ -11,8 +11,8 @@ scipy>=1.14.0
 gymnasium>=0.29.0
 pygame>=2.5.0
 
-# Image processing
-# opencv-python - loaded via 'module load opencv' on cluster
+# Image processing (cluster has dummy package that bridges to module-loaded opencv)
+opencv-python>=4.0.0
 
 # Plotting and visualization
 matplotlib>=3.8.0
