@@ -3,9 +3,9 @@
 #SBATCH --job-name=flappy_evolution
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
-#SBATCH --mem-per-cpu=1G
-#SBATCH --time=08:00:00
+#SBATCH --cpus-per-task=64
+#SBATCH --mem-per-cpu=512M
+#SBATCH --time=03:00:00
 #SBATCH --output=evolution_%j.out
 #SBATCH --error=evolution_%j.err
 #SBATCH --mail-user=hillroyx@mcmaster.ca

@@ -471,7 +471,8 @@ class FlappyBirdEvaluator(FitnessEvaluator):
             else:  # obs_type == 'matrix'
                 memory.load_observation({'matrix': processed_observations})
 
-            individual.get_effective_program(self.output_registers).execute(memory)
+            # individual.get_effective_program(self.output_registers).execute(memory)
+            individual.program.execute(memory)
 
 
             # Read action from output register
