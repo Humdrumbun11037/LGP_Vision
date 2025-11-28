@@ -11,9 +11,13 @@ class Program:
         self.instructions = instructions
         self._effective_instructions = None
         self.max_program_length = max_program_length
-    def execute(self, memory:MemoryBank):
-        for instruction in self.instructions:
+    def execute(self, memory:MemoryBank, debug: bool = False):
+        for i, instruction in enumerate(self.instructions):
+            if debug:
+                print(f"Executing instruction {i}: {instruction}")
             instruction.execute(memory)
+        if debug:
+            print(f"Executed all {len(self.instructions)} instructions")
 
     def copy(self) -> 'Program':
         """Deep copy of program"""

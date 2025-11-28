@@ -155,15 +155,9 @@ class CartPoleEvaluator(FitnessEvaluator):
         self.close()
 
     def _evaluate_episode(self, individual: 'Individual', episode_idx: int) -> float:
-        # Seed each episode differently to ensure variety
-        # Use episode_idx to get different episodes even with same base seed
-        episode_seed = None
+        # Use fixed seed for deterministic evaluation across all workers
         if self.config.rng_seed is not None:
-            # Use config seed + episode index (deterministic and unique per worker)
-            episode_seed = int((self.config.rng_seed + episode_idx * 100) % (2**31))
-        
-        if episode_seed is not None:
-            observation, _ = self.env.reset(seed=episode_seed)
+            observation, _ = self.env.reset(seed=self.config.rng_seed)
         else:
             observation, _ = self.env.reset()
         observation = np.asarray(observation, dtype=np.float32)
@@ -445,15 +439,9 @@ class FlappyBirdEvaluator(FitnessEvaluator):
             return matrix_observations, 'matrix'
 
     def _evaluate_episode(self, individual: 'Individual', episode_idx: int) -> float:
-        # Seed each episode differently to ensure variety
-        # Use episode_idx to get different episodes even with same base seed
-        episode_seed = None
+        # Use fixed seed for deterministic evaluation across all workers
         if self.config.rng_seed is not None:
-            # Use config seed + episode index (deterministic and unique per worker)
-            episode_seed = int((self.config.rng_seed + episode_idx * 100) % (2**31))
-        
-        if episode_seed is not None:
-            observation, _ = self.env.reset(seed=episode_seed)
+            observation, _ = self.env.reset(seed=self.config.rng_seed)
         else:
             observation, _ = self.env.reset()
         observation = np.asarray(observation, dtype=np.float32)

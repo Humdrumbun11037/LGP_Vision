@@ -28,20 +28,13 @@ def _evaluate_worker(args: Tuple[int, Individual, type, dict]) -> Tuple[int, flo
     """
     idx, individual, EvaluatorClass, evaluator_kwargs = args
     
-    # CRITICAL: Give each worker a unique seed based on worker index
-    # This ensures each worker runs different episodes
+    # Use the same seed for all workers for deterministic evaluation
     import numpy as np
     base_seed = evaluator_kwargs.get('rng_seed', None)
-    if base_seed is not None:
-        # Combine base seed with worker index for uniqueness
-        worker_seed = int((base_seed + idx * 1000) % (2**31))
-    else:
-        # If no base seed, use worker index as seed (ensures uniqueness)
-        worker_seed = int((idx * 1000 + 12345) % (2**31))
     
-    # Update the config with unique seed for this worker
+    # Update the config with the base seed (same for all workers)
     evaluator_kwargs = evaluator_kwargs.copy()  # Don't modify original
-    evaluator_kwargs['rng_seed'] = worker_seed
+    evaluator_kwargs['rng_seed'] = base_seed
     
     # Create a fresh evaluator (and thus fresh environment) for this worker
     # Check if we need to create a config object or use kwargs directly
@@ -63,11 +56,11 @@ def _evaluate_worker(args: Tuple[int, Individual, type, dict]) -> Tuple[int, flo
             worker_evaluator = EvaluatorClass(config=config)
         else:
             # For other evaluators, use kwargs directly
-            evaluator_kwargs['rng'] = np.random.default_rng(worker_seed)
+            evaluator_kwargs['rng'] = np.random.default_rng(base_seed)
             worker_evaluator = EvaluatorClass(**evaluator_kwargs)
     except Exception as e:
         # Fallback: try direct kwargs (backward compatibility)
-        evaluator_kwargs['rng'] = np.random.default_rng(worker_seed)
+        evaluator_kwargs['rng'] = np.random.default_rng(base_seed)
         worker_evaluator = EvaluatorClass(**evaluator_kwargs)
     
     try:
