@@ -29,7 +29,9 @@ class Program:
                 dest_index=instr.dest_index,
                 source_types=instr.source_types.copy(),
                 source_indices=instr.source_indices.copy(),
-                source_obs_flags=instr.source_obs_flags.copy()
+                source_obs_flags=instr.source_obs_flags.copy(),
+                source_obs_register_types=instr.source_obs_register_types.copy(),
+                source_obs_register_indices=instr.source_obs_register_indices.copy()
             )
             for instr in self.instructions
         ], max_program_length=self.max_program_length)
@@ -125,11 +127,14 @@ if __name__ == "__main__":
     print("\n--- Test 1: All instructions effective ---")
     instructions1 = [
         Instruction(ScalarAddOp(), MemoryType.SCALAR, 0, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [1000, 2000], [True, True]),  # 0: r0 = obs[1000] + obs[2000]
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [1000, 2000], [True, True],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),  # 0: r0 = obs[1000] + obs[2000]
         Instruction(ScalarMulOp(), MemoryType.SCALAR, 1, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0], [False, False]),    # 1: r1 = r0 * r0
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),    # 1: r1 = r0 * r0
         Instruction(ScalarAddOp(), MemoryType.SCALAR, 9, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [1, 1], [False, False]),     # 2: r9 = r1 + r1 (output)
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [1, 1], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),     # 2: r9 = r1 + r1 (output)
     ]
     prog1 = Program(instructions1.copy())
     print(f"Before: {len(prog1)} instructions")
@@ -147,17 +152,23 @@ if __name__ == "__main__":
     print("\n--- Test 2: Program with introns ---")
     instructions2 = [
         Instruction(ScalarAddOp(), MemoryType.SCALAR, 0, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [1000, 2000], [True, True]),    # 0: r0 = obs[1000] + obs[2000] (effective)
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [1000, 2000], [True, True],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),    # 0: r0 = obs[1000] + obs[2000] (effective)
         Instruction(ScalarMulOp(), MemoryType.SCALAR, 1, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0], [False, False]),    # 1: r1 = r0 * r0 (effective)
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),    # 1: r1 = r0 * r0 (effective)
         Instruction(ScalarAddOp(), MemoryType.SCALAR, 9, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [1, 1], [False, False]),    # 2: r9 = r1 + r1 (effective, output)
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [1, 1], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),    # 2: r9 = r1 + r1 (effective, output)
         Instruction(ScalarSubOp(), MemoryType.SCALAR, 2, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 1], [False, False]),     # 3: r2 = r0 - r1 (INTRON)
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 1], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),     # 3: r2 = r0 - r1 (INTRON)
         Instruction(ScalarMulOp(), MemoryType.SCALAR, 3, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [2, 2], [False, False]),    # 4: r3 = r2 * r2 (INTRON)
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [2, 2], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),    # 4: r3 = r2 * r2 (INTRON)
         Instruction(ScalarAddOp(), MemoryType.SCALAR, 4, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [3, 3], [False, False]),     # 5: r4 = r3 + r3 (INTRON)
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [3, 3], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),     # 5: r4 = r3 + r3 (INTRON)
     ]
     prog2 = Program(instructions2.copy())
     print(f"Before: {len(prog2)} instructions")
@@ -178,11 +189,14 @@ if __name__ == "__main__":
     print("\n--- Test 3: Overwritten registers ---")
     instructions3 = [
         Instruction(ScalarAddOp(), MemoryType.SCALAR, 0, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [1000, 2000], [True, True]),  # 0: r0 = obs[1000] + obs[2000] (INTRON - overwritten)
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [1000, 2000], [True, True],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),  # 0: r0 = obs[1000] + obs[2000] (INTRON - overwritten)
         Instruction(ScalarMulOp(), MemoryType.SCALAR, 0, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [1000, 2000], [True, True]),  # 1: r0 = obs[1000] * obs[2000] (effective)
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [1000, 2000], [True, True],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),  # 1: r0 = obs[1000] * obs[2000] (effective)
         Instruction(ScalarAddOp(), MemoryType.SCALAR, 9, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0], [False, False]),     # 2: r9 = r0 + r0 (effective, output)
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),     # 2: r9 = r0 + r0 (effective, output)
     ]
     prog3 = Program(instructions3.copy())
     print(f"Before: {len(prog3)} instructions")
@@ -202,15 +216,20 @@ if __name__ == "__main__":
     print("\n--- Test 4: Multiple output registers ---")
     instructions4 = [
         Instruction(ScalarAddOp(), MemoryType.SCALAR, 0, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [1000, 2000], [True, True]),    # 0: r0 = obs[1000] + obs[2000]
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [1000, 2000], [True, True],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),    # 0: r0 = obs[1000] + obs[2000]
         Instruction(ScalarMulOp(), MemoryType.SCALAR, 1, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0], [False, False]),     # 1: r1 = r0 * r0
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),     # 1: r1 = r0 * r0
         Instruction(ScalarAddOp(), MemoryType.SCALAR, 9, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [1, 1], [False, False]),    # 2: r9 = r1 + r1 (output 1)
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [1, 1], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),    # 2: r9 = r1 + r1 (output 1)
         Instruction(ScalarSubOp(), MemoryType.SCALAR, 8, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 1], [False, False]),    # 3: r8 = r0 - r1 (output 2)
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 1], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),    # 3: r8 = r0 - r1 (output 2)
         Instruction(ScalarMulOp(), MemoryType.SCALAR, 7, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [2, 2], [False, False]),    # 4: r7 = r2 * r2 (INTRON - r2 never written)
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [2, 2], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),    # 4: r7 = r2 * r2 (INTRON - r2 never written)
     ]
     prog4 = Program(instructions4.copy())
     print(f"Before: {len(prog4)} instructions")
@@ -237,7 +256,8 @@ if __name__ == "__main__":
     print("\n--- Test 6: Single instruction ---")
     instructions6 = [
         Instruction(ScalarAddOp(), MemoryType.SCALAR, 9, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [1000, 2000], [True, True]),  # 0: r9 = obs[1000] + obs[2000] (output)
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [1000, 2000], [True, True],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),  # 0: r9 = obs[1000] + obs[2000] (output)
     ]
     prog6 = Program(instructions6.copy())
     print(f"Before: {len(prog6)} instructions")
@@ -250,9 +270,11 @@ if __name__ == "__main__":
     print("\n--- Test 7: All instructions are introns ---")
     instructions7 = [
         Instruction(ScalarAddOp(), MemoryType.SCALAR, 0, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [1000, 2000], [True, True]),  # 0: r0 = obs[1000] + obs[2000]
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [1000, 2000], [True, True],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),  # 0: r0 = obs[1000] + obs[2000]
         Instruction(ScalarMulOp(), MemoryType.SCALAR, 1, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0], [False, False]),   # 1: r1 = r0 * r0
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),   # 1: r1 = r0 * r0
     ]
     prog7 = Program(instructions7.copy())
     print(f"Before: {len(prog7)} instructions")
@@ -265,17 +287,23 @@ if __name__ == "__main__":
     print("\n--- Test 8: Complex dependency chain ---")
     instructions8 = [
         Instruction(ScalarAddOp(), MemoryType.SCALAR, 0, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [1000, 2000], [True, True]),  # 0: r0 = obs[1000] + obs[2000]
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [1000, 2000], [True, True],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),  # 0: r0 = obs[1000] + obs[2000]
         Instruction(ScalarMulOp(), MemoryType.SCALAR, 1, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0], [False, False]),     # 1: r1 = r0 * r0
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),     # 1: r1 = r0 * r0
         Instruction(ScalarSubOp(), MemoryType.SCALAR, 2, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [1, 0], [False, False]),    # 2: r2 = r1 - r0
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [1, 0], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),    # 2: r2 = r1 - r0
         Instruction(ScalarDivProtectedOp(), MemoryType.SCALAR, 3, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [2, 1], [False, False]),    # 3: r3 = r2 / r1
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [2, 1], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),    # 3: r3 = r2 / r1
         Instruction(ScalarAddOp(), MemoryType.SCALAR, 9, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [3, 3], [False, False]),    # 4: r9 = r3 + r3 (output)
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [3, 3], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),    # 4: r9 = r3 + r3 (output)
         Instruction(ScalarMulOp(), MemoryType.SCALAR, 4, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [5, 5], [False, False]),    # 5: r4 = r5 * r5 (INTRON - r5 never written)
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [5, 5], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),    # 5: r4 = r5 * r5 (INTRON - r5 never written)
     ]
     prog8 = Program(instructions8.copy())
     print(f"Before: {len(prog8)} instructions")
@@ -294,13 +322,17 @@ if __name__ == "__main__":
     print("\n--- Test 9: remove_introns_create_copy (non-destructive) ---")
     instructions9 = [
         Instruction(ScalarAddOp(), MemoryType.SCALAR, 0, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [1000, 2000], [True, True]),
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [1000, 2000], [True, True],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),
         Instruction(ScalarMulOp(), MemoryType.SCALAR, 1, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0], [False, False]),
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),
         Instruction(ScalarAddOp(), MemoryType.SCALAR, 9, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [1, 1], [False, False]),
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [1, 1], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),
         Instruction(ScalarSubOp(), MemoryType.SCALAR, 2, 
-                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 1], [False, False]),  # INTRON
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 1], [False, False],
+                   [MemoryType.SCALAR, MemoryType.SCALAR], [0, 0]),  # INTRON
     ]
     original = Program(instructions9.copy())
     print(f"Original: {len(original)} instructions")

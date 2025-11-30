@@ -16,12 +16,12 @@ from memory_system import MemoryType
 
 from individual import Individual
 
-# try:
-#     from vision_encoder import MobileNetV2FeatureExtractor
-#     VISION_ENCODER_AVAILABLE = True
-# except ImportError:
-#     VISION_ENCODER_AVAILABLE = False
-#     MobileNetV2FeatureExtractor = None
+try:
+    from vision_encoder import MobileNetV2FeatureExtractor
+    VISION_ENCODER_AVAILABLE = True
+except ImportError:
+    VISION_ENCODER_AVAILABLE = False
+    MobileNetV2FeatureExtractor = None
 
 
 @dataclass
@@ -40,6 +40,25 @@ class CartPoleEvaluatorConfig(BaseEvaluatorConfig):
     max_steps: int = 500
     output_register: int = 7
     render_mode: Optional[str] = None
+
+
+@dataclass
+class AcrobotEvaluatorConfig(BaseEvaluatorConfig):
+    """Configuration for Acrobot evaluator."""
+    env_id: str = "Acrobot-v1"
+    max_steps: int = 500
+    output_register: int = 7
+    render_mode: Optional[str] = None
+
+
+@dataclass
+class PendulumEvaluatorConfig(BaseEvaluatorConfig):
+    """Configuration for Pendulum evaluator."""
+    env_id: str = "Pendulum-v1"
+    max_steps: int = 200
+    output_register: int = 7
+    render_mode: Optional[str] = None
+    action_range: Tuple[float, float] = (-2.0, 2.0)  # Torque range for Pendulum
 
 
 @dataclass
@@ -157,7 +176,10 @@ class CartPoleEvaluator(FitnessEvaluator):
     def _evaluate_episode(self, individual: 'Individual', episode_idx: int) -> float:
         # Use fixed seed for deterministic evaluation across all workers
         if self.config.rng_seed is not None:
-            observation, _ = self.env.reset(seed=self.config.rng_seed)
+            # Add episode_idx to the seed to ensure each episode is different
+            # but still deterministic
+            current_seed = self.config.rng_seed + episode_idx
+            observation, _ = self.env.reset(seed=current_seed)
         else:
             observation, _ = self.env.reset()
         observation = np.asarray(observation, dtype=np.float32)
@@ -166,11 +188,185 @@ class CartPoleEvaluator(FitnessEvaluator):
         total_reward = 0.0
 
         for _ in range(self.max_steps): # stateful registers 
-            memory.load_observation({'scalar': observation.tolist()})
-            individual.get_effective_program(self.output_registers).execute(memory)
+            obs_matrix = np.tile(observation, (4,1))
+            memory.load_observation({
+            'scalar': observation.tolist(),           # 4 scalars
+            'vector': [observation.tolist()],        # 1 vector of size 4
+            'matrix': [obs_matrix]                    # 1 matrix of size 4x4
+            })
+        
+            individual.program.execute(memory)
 
             action_value = memory.read_scalar(self.output_register)
             action = 1 if action_value >= 0.0 else 0
+
+            observation, reward, terminated, truncated, _ = self.env.step(action)
+            observation = np.asarray(observation, dtype=np.float32)
+            total_reward += reward
+            if terminated or truncated:
+                break
+
+        return float(total_reward)
+
+
+class AcrobotEvaluator(FitnessEvaluator):
+    """Evaluate a policy on Acrobot using scalar observations and output register.
+
+    Acrobot is an underactuated double pendulum. The goal is to swing the lower link
+    up to a vertical position.
+
+    Assumptions:
+        - Observation registers store 6 scalar values: [cos(theta1), sin(theta1), 
+          cos(theta2), sin(theta2), thetaDot1, thetaDot2]
+        - Working scalars include register `output_register` which encodes the action.
+        - Action space is Discrete(3): 0 = -1 torque, 1 = 0 torque, 2 = +1 torque
+        - The program writes to the designated output register after execution.
+    """
+
+    def __init__(
+        self,
+        config: AcrobotEvaluatorConfig,
+    ) -> None:
+        if gym is None:
+            raise ImportError("gymnasium is required for AcrobotEvaluator")
+        
+        self.config = config
+        
+        # CRITICAL: Set output_registers if not provided in config
+        if config.output_registers is None:
+            from memory_system import MemoryType
+            config.output_registers = [(MemoryType.SCALAR, config.output_register)]
+        
+        super().__init__(config)
+        self.env = gym.make(config.env_id, render_mode=config.render_mode)
+        self.max_steps = config.max_steps
+        self.output_register = config.output_register
+        self.env_id = config.env_id
+        self.render_mode = config.render_mode
+
+    def close(self) -> None:
+        if hasattr(self, "env") and self.env is not None:
+            self.env.close()
+
+    def __del__(self) -> None:  # pragma: no cover
+        self.close()
+
+    def _evaluate_episode(self, individual: 'Individual', episode_idx: int) -> float:
+        # Use fixed seed for deterministic evaluation across all workers
+        if self.config.rng_seed is not None:
+            # Add episode_idx to the seed to ensure each episode is different
+            # but still deterministic
+            current_seed = self.config.rng_seed + episode_idx
+            observation, _ = self.env.reset(seed=current_seed)
+        else:
+            observation, _ = self.env.reset()
+        observation = np.asarray(observation, dtype=np.float32)
+
+        memory = individual.memory.copy()
+        total_reward = 0.0
+
+        for _ in range(self.max_steps):
+            # Acrobot has 6 observation dimensions
+            obs_matrix = np.tile(observation, (6, 1))  # Shape: (6, 6)
+            memory.load_observation({
+                'scalar': observation.tolist(),           # 6 scalars
+                'vector': [observation.tolist()],        # 1 vector of size 6
+                'matrix': [obs_matrix]                    # 1 matrix of size 6x6
+            })
+            
+            individual.program.execute(memory)
+
+            # Acrobot action space is Discrete(3): 0, 1, 2
+            # Map scalar output to discrete action: negative -> 0, zero -> 1, positive -> 2
+            action_value = memory.read_scalar(self.output_register)
+            if action_value < -0.33:
+                action = 0  # Apply -1 torque
+            elif action_value > 0.33:
+                action = 2  # Apply +1 torque
+            else:
+                action = 1  # Apply 0 torque
+
+            observation, reward, terminated, truncated, _ = self.env.step(action)
+            observation = np.asarray(observation, dtype=np.float32)
+            total_reward += reward
+            if terminated or truncated:
+                break
+
+        return float(total_reward)
+
+
+class PendulumEvaluator(FitnessEvaluator):
+    """Evaluate a policy on Pendulum using scalar observations and output register.
+
+    Pendulum is a classic control problem where the goal is to swing up and balance
+    a pendulum in the upright position.
+
+    Assumptions:
+        - Observation registers store 3 scalar values: [cos(theta), sin(theta), thetaDot]
+        - Working scalars include register `output_register` which encodes the action.
+        - Action space is continuous: torque in range [-2.0, 2.0]
+        - The program writes to the designated output register after execution.
+    """
+
+    def __init__(
+        self,
+        config: PendulumEvaluatorConfig,
+    ) -> None:
+        if gym is None:
+            raise ImportError("gymnasium is required for PendulumEvaluator")
+        
+        self.config = config
+        
+        # CRITICAL: Set output_registers if not provided in config
+        if config.output_registers is None:
+            from memory_system import MemoryType
+            config.output_registers = [(MemoryType.SCALAR, config.output_register)]
+        
+        super().__init__(config)
+        self.env = gym.make(config.env_id, render_mode=config.render_mode)
+        self.max_steps = config.max_steps
+        self.output_register = config.output_register
+        self.env_id = config.env_id
+        self.render_mode = config.render_mode
+        self.action_range = config.action_range
+
+    def close(self) -> None:
+        if hasattr(self, "env") and self.env is not None:
+            self.env.close()
+
+    def __del__(self) -> None:  # pragma: no cover
+        self.close()
+
+    def _evaluate_episode(self, individual: 'Individual', episode_idx: int) -> float:
+        # Use fixed seed for deterministic evaluation across all workers
+        if self.config.rng_seed is not None:
+            # Add episode_idx to the seed to ensure each episode is different
+            # but still deterministic
+            current_seed = self.config.rng_seed + episode_idx
+            observation, _ = self.env.reset(seed=current_seed)
+        else:
+            observation, _ = self.env.reset()
+        observation = np.asarray(observation, dtype=np.float32)
+
+        memory = individual.memory.copy()
+        total_reward = 0.0
+
+        for _ in range(self.max_steps):
+            # Pendulum has 3 observation dimensions
+            obs_matrix = np.tile(observation, (3, 1))  # Shape: (3, 3)
+            memory.load_observation({
+                'scalar': observation.tolist(),           # 3 scalars
+                'vector': [observation.tolist()],        # 1 vector of size 3
+                'matrix': [obs_matrix]                    # 1 matrix of size 3x3
+            })
+            
+            individual.program.execute(memory)
+
+            # Pendulum action space is continuous: clip to [-2.0, 2.0] range
+            action_value = memory.read_scalar(self.output_register)
+            action = np.clip(action_value, self.action_range[0], self.action_range[1])
+            # Pendulum expects action as array
+            action = np.array([action], dtype=np.float32)
 
             observation, reward, terminated, truncated, _ = self.env.step(action)
             observation = np.asarray(observation, dtype=np.float32)
@@ -412,7 +608,7 @@ class FlappyBirdEvaluator(FitnessEvaluator):
                 f"Must be 'full_image', 'quantized', or 'feature_vector'"
             )
 
-    def _process_observation(self, observation: np.ndarray) -> Tuple[List[np.ndarray], str]:
+    def _process_observation(self, observation: np.ndarray) -> Union[Tuple[List[np.ndarray], str], dict]:
         """
         Process the raw RGB observation into observations for memory.
         
@@ -422,15 +618,29 @@ class FlappyBirdEvaluator(FitnessEvaluator):
             observation: RGB image array of shape (800, 576, 3) with values 0-255
             
         Returns:
-            Tuple of (observations_list, observation_type) where:
-            - observation_type is 'matrix' for "full_image" and "quantized" strategies
-            - observation_type is 'vector' for "feature_vector" strategy
-            - observations_list contains the processed observations
+            For "full_image" and "quantized" strategies:
+                Tuple of (observations_list, 'matrix')
+            For "feature_vector" strategy:
+                Dict with both 'vector' and 'matrix' keys, where:
+                - 'vector': [feature_vector] - the raw 1D feature vector
+                - 'matrix': [tiled_matrix] - feature vector tiled as columns (N×N matrix)
         """
         if self.patch_strategy == "feature_vector":
-            # For feature_vector strategy, pass raw RGB observation directly
+            # Extract feature vector from RGB observation
             feature_vector = self._extract_features(observation)
-            return [feature_vector], 'vector'
+            
+            # Create tiled matrix: each column is the feature vector
+            # Shape: (feature_size, feature_size) e.g., (64, 64) or (256, 256)
+            feature_matrix = np.tile(
+                feature_vector.reshape(-1, 1),  # Column vector
+                (1, len(feature_vector))         # Tile N times horizontally
+            ).astype(np.float32)
+            
+            # Return BOTH vector and matrix observations
+            return {
+                'vector': [feature_vector],
+                'matrix': [feature_matrix]
+            }
         else:
             # For full_image and quantized strategies, extract color channel first
             single_channel = self._extract_color_channel(observation)
@@ -441,7 +651,10 @@ class FlappyBirdEvaluator(FitnessEvaluator):
     def _evaluate_episode(self, individual: 'Individual', episode_idx: int) -> float:
         # Use fixed seed for deterministic evaluation across all workers
         if self.config.rng_seed is not None:
-            observation, _ = self.env.reset(seed=self.config.rng_seed)
+            # Add episode_idx to the seed to ensure each episode is different
+            # but still deterministic
+            current_seed = self.config.rng_seed + episode_idx
+            observation, _ = self.env.reset(seed=current_seed)
         else:
             observation, _ = self.env.reset()
         observation = np.asarray(observation, dtype=np.float32)
@@ -451,13 +664,19 @@ class FlappyBirdEvaluator(FitnessEvaluator):
 
         for _ in range(self.max_steps):
             # Process observation based on strategy
-            processed_observations, obs_type = self._process_observation(observation)
+            processed = self._process_observation(observation)
             
-            # Load observations into memory based on type
-            if obs_type == 'vector':
-                memory.load_observation({'vector': processed_observations})
-            else:  # obs_type == 'matrix'
-                memory.load_observation({'matrix': processed_observations})
+            # Load observations into memory based on return type
+            if isinstance(processed, dict):
+                # feature_vector strategy returns dict with both 'vector' and 'matrix'
+                memory.load_observation(processed)
+            else:
+                # full_image/quantized strategies return (observations_list, obs_type) tuple
+                processed_observations, obs_type = processed
+                if obs_type == 'vector':
+                    memory.load_observation({'vector': processed_observations})
+                else:  # obs_type == 'matrix'
+                    memory.load_observation({'matrix': processed_observations})
 
             # individual.get_effective_program(self.output_registers).execute(memory)
             individual.program.execute(memory)

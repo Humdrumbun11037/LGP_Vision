@@ -38,12 +38,18 @@ class GeneticOperators:
 
         Returns:
             The mutated instruction (same instance, mutated in place).
+        
+        Mutation types:
+            0: Replace entire operation
+            1: Mutate destination index
+            2: Mutate source element index
+            3: Mutate observation source (type and/or register index)
         """
 
         generator = rng or self._rng or np.random.default_rng()
 
         # Randomly choose which micro mutation to apply.
-        mutation = int(generator.integers(0, 3))
+        mutation = int(generator.integers(0, 4))
 
         if mutation == 0:
             # Replace the entire operation and refresh dependent fields.
@@ -54,28 +60,74 @@ class GeneticOperators:
                 instruction.dest_type, generator
             )
             instruction.source_types = new_op.input_types()
+            
+            # Check if any observation types are available
+            has_obs = len(self.instruction_set._available_obs_types) > 0
+            
             # Generate indices and observation flags
-            instruction.source_indices = [
-                self.instruction_set.get_random_source(src_type, generator)
-                for src_type in instruction.source_types
-            ]
-            # Generate observation flags (50% probability each)
-            instruction.source_obs_flags = [
-                generator.random() < 0.5
-                for _ in instruction.source_types
-            ]
+            instruction.source_indices = []
+            instruction.source_obs_flags = []
+            instruction.source_obs_register_types = []
+            instruction.source_obs_register_indices = []
+            
+            for src_type in instruction.source_types:
+                # Observation flag (50% probability, only if obs exists)
+                obs_flag = generator.random() < 0.5 and has_obs
+                instruction.source_obs_flags.append(obs_flag)
+                
+                # Element index
+                instruction.source_indices.append(
+                    self.instruction_set.get_random_source(src_type, generator)
+                )
+                
+                # Observation register type and index
+                if obs_flag:
+                    obs_reg_type = self.instruction_set._choose_obs_register_type(src_type, generator)
+                    obs_reg_idx = self.instruction_set._get_random_obs_register_index(obs_reg_type, generator)
+                else:
+                    obs_reg_type = MemoryType.SCALAR
+                    obs_reg_idx = 0
+                
+                instruction.source_obs_register_types.append(obs_reg_type)
+                instruction.source_obs_register_indices.append(obs_reg_idx)
+                
         elif mutation == 1:
             # Mutate only the destination index (keeping type intact).
             instruction.dest_index = self.instruction_set.get_random_dest(
                 instruction.dest_type, generator
             )
-        else:
-            # Mutate one of the source indices, if any exist.
+        elif mutation == 2:
+            # Mutate one of the source element indices, if any exist.
             if instruction.source_types:
                 src_position = int(generator.integers(0, len(instruction.source_types)))
                 instruction.source_indices[src_position] = self.instruction_set.get_random_source(
                     instruction.source_types[src_position], generator
                 )
+        else:
+            # Mutate observation source (type and/or register index)
+            # Find positions with obs_flag=True
+            obs_positions = [i for i, f in enumerate(instruction.source_obs_flags) if f]
+            
+            if obs_positions and len(self.instruction_set._available_obs_types) > 0:
+                pos = generator.choice(obs_positions)
+                src_type = instruction.source_types[pos]
+                
+                # Randomly choose to mutate type, index, or both
+                mutate_what = int(generator.integers(0, 3))
+                
+                if mutate_what == 0 or mutate_what == 2:
+                    # Mutate obs register type
+                    new_obs_type = self.instruction_set._choose_obs_register_type(src_type, generator)
+                    instruction.source_obs_register_types[pos] = new_obs_type
+                    # Also update index to be valid for new type
+                    instruction.source_obs_register_indices[pos] = \
+                        self.instruction_set._get_random_obs_register_index(new_obs_type, generator)
+                
+                if mutate_what == 1 or mutate_what == 2:
+                    # Mutate obs register index (keeping type)
+                    obs_reg_type = instruction.source_obs_register_types[pos]
+                    instruction.source_obs_register_indices[pos] = \
+                        self.instruction_set._get_random_obs_register_index(obs_reg_type, generator)
 
         return instruction
 
@@ -244,6 +296,8 @@ if __name__ == "__main__":
         source_types=[MemoryType.SCALAR, MemoryType.SCALAR],
         source_indices=[0, 1],
         source_obs_flags=[False, False],
+        source_obs_register_types=[MemoryType.SCALAR, MemoryType.SCALAR],
+        source_obs_register_indices=[0, 0],
     )
 
     print("Initial instruction:", instruction.to_resolved_str(memory_config))
@@ -273,6 +327,8 @@ if __name__ == "__main__":
             source_types=[MemoryType.SCALAR, MemoryType.SCALAR],
             source_indices=[0, 1],
             source_obs_flags=[False, False],
+            source_obs_register_types=[MemoryType.SCALAR, MemoryType.SCALAR],
+            source_obs_register_indices=[0, 0],
         )
     ])
 

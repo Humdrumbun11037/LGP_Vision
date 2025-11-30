@@ -3072,6 +3072,65 @@ FLAPPYBIRD_MINIMAL_OPS = [
     CVAvgPoolOp,              # Downsampling (smooths)
 ]
 
+# ==================== MINIMAL SCALAR OPERATIONS FOR TESTING ====================
+# Based on the 8 fundamental LGP operations: {+, -, *, /, cos, log, exp, conditional}
+
+class ScalarConditionalOp(Operation):
+    """Conditional operation: IF a < b THEN -a ELSE a
+    
+    This implements the classic LGP conditional operator that provides
+    branching behavior without explicit control flow.
+    """
+    def input_types(self) -> List[MemoryType]:
+        return [MemoryType.SCALAR, MemoryType.SCALAR]
+    
+    def output_type(self) -> MemoryType:
+        return MemoryType.SCALAR
+    
+    def execute(self, a: float, b: float) -> float:
+        return -a if a < b else a
+    
+    @property
+    def name(self) -> str:
+        return "scalar_conditional"
+    
+    @property
+    def differentiable(self) -> bool:
+        return False  # Has discontinuity at a=b
+
+
+# Minimal 8 scalar operations for testing
+# Reference: Brameier & Banzhaf's recommended minimal set
+MINIMAL_SCALAR_OPS = [
+    ScalarAddOp,              # +
+    ScalarSubOp,              # -
+    ScalarMulOp,              # *
+    ScalarDivProtectedOp,     # / (protected)
+    AutoMLScalarCosOp,        # cos
+    AutoMLScalarLogOp,        # log (natural)
+    AutoMLScalarExpOp,        # exp
+    ScalarConditionalOp,      # IF a < b THEN -a ELSE a
+]
+
+# 12 operations optimized for feature_vector strategy
+# Combines scalar ops with key vector aggregation ops
+FEATURE_VECTOR_OPS = [
+    # Scalar operations (8) - for combining individual features
+    ScalarAddOp,              # +
+    ScalarSubOp,              # -
+    ScalarMulOp,              # *
+    ScalarDivProtectedOp,     # / (protected)
+    AutoMLScalarCosOp,        # cos (nonlinear)
+    AutoMLScalarLogOp,        # log (nonlinear)
+    AutoMLScalarExpOp,        # exp (nonlinear)
+    ScalarConditionalOp,      # IF a < b THEN -a ELSE a
+    # Vector operations (4) - for processing entire feature vector at once
+    VectorDotProductOp,       # Weighted sum of all features (like a neural layer!)
+    VectorMeanOp,             # Average all features
+    VectorSumOp,              # Sum all features
+    VectorNormOp,             # Magnitude/distance metric
+]
+
 # ==================== OPERATION REGISTRY ====================
 
 # All scalar operations
@@ -3084,6 +3143,7 @@ SCALAR_OPS = [
     ScalarMinOp,
     ScalarAbsOp,
     ScalarNegOp,
+    ScalarConditionalOp,
 ]
 
 # All vector operations

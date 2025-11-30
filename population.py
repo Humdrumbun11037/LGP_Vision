@@ -29,7 +29,7 @@ def _evaluate_worker(args: Tuple[int, Individual, type, dict]) -> Tuple[int, flo
     idx, individual, EvaluatorClass, evaluator_kwargs = args
     
     # Use the same seed for all workers for deterministic evaluation
-    import numpy as np
+    
     base_seed = evaluator_kwargs.get('rng_seed', None)
     
     # Update the config with the base seed (same for all workers)
@@ -41,6 +41,8 @@ def _evaluate_worker(args: Tuple[int, Individual, type, dict]) -> Tuple[int, flo
     from evaluator import (
         BaseEvaluatorConfig, 
         CartPoleEvaluatorConfig, 
+        AcrobotEvaluatorConfig,
+        PendulumEvaluatorConfig,
         FlappyBirdEvaluatorConfig
     )
     
@@ -53,6 +55,14 @@ def _evaluate_worker(args: Tuple[int, Individual, type, dict]) -> Tuple[int, flo
         elif EvaluatorClass.__name__ == 'CartPoleEvaluator':
             # Create config object for CartPoleEvaluator with unique seed
             config = CartPoleEvaluatorConfig(**evaluator_kwargs)
+            worker_evaluator = EvaluatorClass(config=config)
+        elif EvaluatorClass.__name__ == 'AcrobotEvaluator':
+            # Create config object for AcrobotEvaluator with unique seed
+            config = AcrobotEvaluatorConfig(**evaluator_kwargs)
+            worker_evaluator = EvaluatorClass(config=config)
+        elif EvaluatorClass.__name__ == 'PendulumEvaluator':
+            # Create config object for PendulumEvaluator with unique seed
+            config = PendulumEvaluatorConfig(**evaluator_kwargs)
             worker_evaluator = EvaluatorClass(config=config)
         else:
             # For other evaluators, use kwargs directly

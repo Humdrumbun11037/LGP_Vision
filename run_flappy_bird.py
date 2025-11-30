@@ -15,7 +15,7 @@ from datetime import datetime
 import gymnasium as gym
 from memory_system import MemoryConfig
 from instruction_set import InstructionSet
-from operation import AUTOML_ALL_OPS, CV_ALL_OPS, FLAPPYBIRD_MINIMAL_OPS
+from operation import AUTOML_ALL_OPS, CV_ALL_OPS, FLAPPYBIRD_MINIMAL_OPS, MINIMAL_SCALAR_OPS, FEATURE_VECTOR_OPS
 from population import Population, PopulationConfig
 from operators import GeneticOperators
 from evaluator import FlappyBirdEvaluator, FlappyBirdEvaluatorConfig
@@ -71,7 +71,22 @@ def main(config_path: str = "config.yaml"):
     print(f"\nMemory config: {memory_cfg}")
     
     # Setup operations based on config
-    if ops_config.get('use_minimal', False):
+    if ops_config.get('use_feature_vector_ops', False):
+        # Use 12 operations optimized for feature_vector strategy
+        all_ops = FEATURE_VECTOR_OPS
+        print(f"\nUsing FEATURE_VECTOR operation set: {len(all_ops)} operations")
+        print("  - 8 scalar ops: add, sub, mul, div, cos, log, exp, conditional")
+        print("  - 4 vector ops: dot_product, mean, sum, norm")
+        print("  (Optimized for feature_vector strategy)")
+    elif ops_config.get('use_minimal_scalar', False):
+        # Use minimal 8 scalar-only operations (best for feature_vector strategy)
+        all_ops = MINIMAL_SCALAR_OPS
+        print(f"\nUsing MINIMAL SCALAR operation set: {len(all_ops)} operations")
+        print("  - add, sub, mul, div (protected)")
+        print("  - cos, log, exp")
+        print("  - conditional (if-then-else)")
+        print("  (Scalar-only for feature_vector strategy)")
+    elif ops_config.get('use_minimal', False):
         # Use carefully selected minimal 27-operation set
         all_ops = FLAPPYBIRD_MINIMAL_OPS
         print(f"\nUsing MINIMAL operation set: {len(all_ops)} operations")

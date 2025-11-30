@@ -1,9 +1,11 @@
 from memory_system import MemoryBank, MemoryType, MemoryConfig
 from operation import Operation
-from typing import List
+from typing import List, Optional
 from instruction import Instruction
 import numpy as np
 from program import Program
+
+
 class InstructionSet:
     """
     Generates random valid instructions for typed LGP.
@@ -16,27 +18,26 @@ class InstructionSet:
     
     def __init__(self, 
                  operations: List[Operation],
-                memory_config: MemoryConfig):
+                 memory_config: MemoryConfig):
         """
         Args:
             operations: List of operation instances to use
-            n_scalar: Number of working scalar registers
-            n_vector: Number of working vector registers
-            n_matrix: Number of working matrix registers
-            n_obs_scalar: Number of observation scalar registers
-            n_obs_vector: Number of observation vector registers
-            n_obs_matrix: Number of observation matrix registers
+            memory_config: Memory configuration with register counts and dimensions
         """
         self.operations = operations
+        self.memory_config = memory_config  # Store for later use
         self.n_scalar = memory_config.n_scalar
         self.n_vector = memory_config.n_vector
         self.n_matrix = memory_config.n_matrix
         self.n_obs_scalar = memory_config.n_obs_scalar
         self.n_obs_vector = memory_config.n_obs_vector
         self.n_obs_matrix = memory_config.n_obs_matrix
+        self.vector_size = memory_config.vector_size
+        self.matrix_shape = memory_config.matrix_shape
 
+        # Pre-compute available observation types (those with n > 0)
+        self._available_obs_types = self._get_available_obs_types()
         
-     
         # Pre-compute index ranges for efficiency
         self._source_ranges = {
             MemoryType.SCALAR: (
@@ -59,6 +60,58 @@ class InstructionSet:
             MemoryType.MATRIX: list(range(0, self.n_matrix)),
         }
     
+    def _get_available_obs_types(self) -> List[MemoryType]:
+        """Return list of observation types that have at least one register."""
+        available = []
+        if self.n_obs_scalar > 0:
+            available.append(MemoryType.SCALAR)
+        if self.n_obs_vector > 0:
+            available.append(MemoryType.VECTOR)
+        if self.n_obs_matrix > 0:
+            available.append(MemoryType.MATRIX)
+        return available
+    
+    def _choose_obs_register_type(self, src_type: MemoryType, rng: np.random.Generator) -> MemoryType:
+        """
+        Choose a valid observation register type for extracting the given source type.
+        
+        Rules:
+        - SCALAR can come from: SCALAR, VECTOR (element), MATRIX (element)
+        - VECTOR can come from: VECTOR, MATRIX (column)
+        - MATRIX can come from: MATRIX
+        
+        Falls back to available types if preferred type not available.
+        """
+        if not self._available_obs_types:
+            # No observation registers available - return a placeholder
+            # (this shouldn't happen if obs_flag is only True when obs exists)
+            return MemoryType.SCALAR
+        
+        # Define compatible obs types for each source type (in preference order)
+        compatible = {
+            MemoryType.SCALAR: [MemoryType.SCALAR, MemoryType.VECTOR, MemoryType.MATRIX],
+            MemoryType.VECTOR: [MemoryType.VECTOR, MemoryType.MATRIX],
+            MemoryType.MATRIX: [MemoryType.MATRIX],
+        }
+        
+        # Filter to available types
+        valid_types = [t for t in compatible[src_type] if t in self._available_obs_types]
+        
+        if not valid_types:
+            # Fallback: use any available obs type
+            return rng.choice(self._available_obs_types)
+        
+        return rng.choice(valid_types)
+    
+    def _get_random_obs_register_index(self, obs_reg_type: MemoryType, rng: np.random.Generator) -> int:
+        """Get a random observation register index for the given type."""
+        if obs_reg_type == MemoryType.SCALAR:
+            return int(rng.integers(0, max(1, self.n_obs_scalar)))
+        elif obs_reg_type == MemoryType.VECTOR:
+            return int(rng.integers(0, max(1, self.n_obs_vector)))
+        else:  # MATRIX
+            return int(rng.integers(0, max(1, self.n_obs_matrix)))
+    
     def generate_random_instruction(self, rng=None) -> Instruction:
         """
         Generate a random type-safe instruction.
@@ -67,7 +120,7 @@ class InstructionSet:
             rng: numpy random generator (optional)
         
         Returns:
-            Valid Instruction
+            Valid Instruction with properly configured observation access
         """
         if rng is None:
             rng = np.random.default_rng()
@@ -79,20 +132,38 @@ class InstructionSet:
         source_types = op.input_types()
         source_indices = []
         source_obs_flags = []
+        source_obs_register_types = []
+        source_obs_register_indices = []
         
         for src_type in source_types:
-            # Decide observation flag (50% probability)
-            obs_flag = rng.random() < 0.5
+            # Decide observation flag (50% probability, but only if obs registers exist)
+            obs_flag = rng.random() < 0.5 and len(self._available_obs_types) > 0
             source_obs_flags.append(obs_flag)
             
-            # Always generate large range index regardless of flag
+            # Always generate large range index (used as element index for obs, or register index for working)
             source_indices.append(self.get_random_source(src_type, rng))
+            
+            # Generate observation register type and index
+            if obs_flag:
+                obs_reg_type = self._choose_obs_register_type(src_type, rng)
+                obs_reg_idx = self._get_random_obs_register_index(obs_reg_type, rng)
+            else:
+                # Placeholder values (not used when obs_flag=False)
+                obs_reg_type = MemoryType.SCALAR
+                obs_reg_idx = 0
+            
+            source_obs_register_types.append(obs_reg_type)
+            source_obs_register_indices.append(obs_reg_idx)
         
         # Pick destination register (working registers only)
         dest_type = op.output_type()
         dest_index = rng.choice(self._dest_ranges[dest_type])
         
-        return Instruction(op, dest_type, dest_index, source_types, source_indices, source_obs_flags)
+        return Instruction(
+            op, dest_type, dest_index, 
+            source_types, source_indices, source_obs_flags,
+            source_obs_register_types, source_obs_register_indices
+        )
     
     def generate_random_program(self, length: int, rng=None):
         """Generate a random program of given length"""

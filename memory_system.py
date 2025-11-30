@@ -95,7 +95,8 @@ class MemoryBank:
                  # Random initialization parameters
                  init_scalar_range: Tuple[float, float] = (-2.0, 2.0),
                  init_vector_range: Tuple[float, float] = (-1.0, 1.0),
-                 init_matrix_range: Tuple[float, float] = (-0.5, 0.5)
+                 init_matrix_range: Tuple[float, float] = (-0.5, 0.5),
+                 rng: np.random.Generator = None  # Optional RNG for reproducibility
                  ):
         """
         Initialize a MemoryBank with specified register counts and dimensions.
@@ -112,6 +113,7 @@ class MemoryBank:
             n_obs_matrix: Number of matrix observation registers (read-only)
             vector_size: Size of each vector register (all vectors same size)
             matrix_shape: Tuple (height, width) for matrix register dimensions
+            rng: Optional numpy random Generator for reproducible initialization
             
         Raises:
             ValueError: If any count is negative or dimensions are invalid
@@ -138,16 +140,20 @@ class MemoryBank:
         # self.vectors = np.full((n_vector, vector_size), 0.1, dtype=np.float32)
         # self.matrices = np.full((n_matrix, *matrix_shape), 0.1, dtype=np.float32)
 
+        # Use the passed RNG or create a default one for reproducibility
+        if rng is None:
+            rng = np.random.default_rng()
+
         # WORKING MEMORY - initialized with RANDOM values (evolvable constants)
-        self.scalars = np.random.uniform(
+        self.scalars = rng.uniform(
             init_scalar_range[0], init_scalar_range[1], n_scalar
         ).astype(np.float32)
         
-        self.vectors = np.random.uniform(
+        self.vectors = rng.uniform(
             init_vector_range[0], init_vector_range[1], (n_vector, vector_size)
         ).astype(np.float32)
         
-        self.matrices = np.random.uniform(
+        self.matrices = rng.uniform(
             init_matrix_range[0], init_matrix_range[1], (n_matrix, *matrix_shape)
         ).astype(np.float32)
      

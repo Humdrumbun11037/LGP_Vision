@@ -1,17 +1,21 @@
 from dataclasses import dataclass
 from token import OP
 from typing import List
+import numpy as np
 from memory_system import MemoryBank, MemoryType, MemoryConfig
 from operation import Operation
 
 @dataclass
 class Instruction:
-    operation:Operation
+    operation: Operation
     dest_type: MemoryType
     dest_index: int
     source_types: List[MemoryType]
     source_indices: List[int]
     source_obs_flags: List[bool]
+    # NEW: Explicit observation source specification
+    source_obs_register_types: List[MemoryType]   # Which obs register type (SCALAR/VECTOR/MATRIX)
+    source_obs_register_indices: List[int]        # Which register of that type
 
     def __post_init__(self):
         """Validate instruction after creation"""
@@ -21,38 +25,107 @@ class Instruction:
                 "Cannot write to observation registers."
             )
         
-        if len(self.source_types) != len(self.source_indices):
+        n_sources = len(self.source_types)
+        
+        if len(self.source_indices) != n_sources:
             raise ValueError(
-                f"Mismatch: {len(self.source_types)} source types but "
+                f"Mismatch: {n_sources} source types but "
                 f"{len(self.source_indices)} source indices"
             )
         
-        if len(self.source_types) != len(self.source_obs_flags):
+        if len(self.source_obs_flags) != n_sources:
             raise ValueError(
-                f"Mismatch: {len(self.source_types)} source types but "
+                f"Mismatch: {n_sources} source types but "
                 f"{len(self.source_obs_flags)} source observation flags"
             )
-    def execute(self, memory:MemoryBank):
-        inputs = []
-        h, w = memory.matrix_shape  # Matrix dimensions (e.g., 37, 37)
-        obs_matrix = memory.obs_matrices[0]  # Single observation matrix
         
-        for src_type, src_idx, obs_flag in zip(self.source_types, self.source_indices, self.source_obs_flags):
+        if len(self.source_obs_register_types) != n_sources:
+            raise ValueError(
+                f"Mismatch: {n_sources} source types but "
+                f"{len(self.source_obs_register_types)} source obs register types"
+            )
+        
+        if len(self.source_obs_register_indices) != n_sources:
+            raise ValueError(
+                f"Mismatch: {n_sources} source types but "
+                f"{len(self.source_obs_register_indices)} source obs register indices"
+            )
+    def execute(self, memory: MemoryBank):
+        """
+        Execute instruction with generalized observation access.
+        
+        When obs_flag=True, uses source_obs_register_types and source_obs_register_indices
+        to determine which observation register to read from, with support for:
+        - SCALAR obs → SCALAR output (direct read)
+        - VECTOR obs → SCALAR output (element extraction using source_indices)
+        - MATRIX obs → SCALAR output (flat index extraction using source_indices)
+        - VECTOR obs → VECTOR output (direct read)
+        - MATRIX obs → VECTOR output (column extraction using source_indices)
+        - MATRIX obs → MATRIX output (direct read)
+        """
+        inputs = []
+        
+        for i, (src_type, src_idx, obs_flag) in enumerate(
+            zip(self.source_types, self.source_indices, self.source_obs_flags)
+        ):
             if obs_flag:
-                # Observation matrix access: interpret index based on matrix dimensions
-                if src_type == MemoryType.SCALAR:
-                    flat_idx = src_idx % (h * w)  # % 1369 for 37x37
-                    row = flat_idx // w
-                    col = flat_idx % w
-                    inputs.append(float(obs_matrix[row, col]))
-                elif src_type == MemoryType.VECTOR:
-                    col_idx = src_idx % w  # % 37 for 37x37
-                    inputs.append(obs_matrix[:, col_idx].copy())  # Column vector
-                elif src_type == MemoryType.MATRIX:
-                    obs_idx = src_idx % memory.n_obs_matrix  # % 1 = 0 currently
-                    inputs.append(memory.obs_matrices[obs_idx].copy())
+                # Observation access - use explicit obs register type and index
+                obs_reg_type = self.source_obs_register_types[i]
+                obs_reg_idx = self.source_obs_register_indices[i]
+                elem_idx = src_idx  # Reuse source_indices as element index for extraction
+                
+                if obs_reg_type == MemoryType.SCALAR:
+                    # Direct scalar observation read
+                    if memory.n_obs_scalar > 0:
+                        value = memory.obs_scalars[obs_reg_idx % memory.n_obs_scalar]
+                        inputs.append(float(value))
+                    else:
+                        # Fallback: return 0.0 if no scalar observations available
+                        inputs.append(0.0)
+                    
+                elif obs_reg_type == MemoryType.VECTOR:
+                    if memory.n_obs_vector > 0:
+                        obs_vec = memory.obs_vectors[obs_reg_idx % memory.n_obs_vector]
+                        if src_type == MemoryType.SCALAR:
+                            # Extract element from vector
+                            inputs.append(float(obs_vec[elem_idx % memory.vector_size]))
+                        else:  # VECTOR
+                            # Read whole vector
+                            inputs.append(obs_vec.copy())
+                    else:
+                        # Fallback
+                        if src_type == MemoryType.SCALAR:
+                            inputs.append(0.0)
+                        else:
+                            inputs.append(np.zeros(memory.vector_size, dtype=np.float32))
+                        
+                elif obs_reg_type == MemoryType.MATRIX:
+                    if memory.n_obs_matrix > 0:
+                        obs_mat = memory.obs_matrices[obs_reg_idx % memory.n_obs_matrix]
+                        h, w = memory.matrix_shape
+                        
+                        if src_type == MemoryType.SCALAR:
+                            # Extract element from matrix (flat index → row, col)
+                            flat_idx = elem_idx % (h * w) if h * w > 0 else 0
+                            row, col = flat_idx // w if w > 0 else 0, flat_idx % w if w > 0 else 0
+                            inputs.append(float(obs_mat[row, col]))
+                        elif src_type == MemoryType.VECTOR:
+                            # Extract column from matrix
+                            col_idx = elem_idx % w if w > 0 else 0
+                            inputs.append(obs_mat[:, col_idx].copy())
+                        else:  # MATRIX
+                            # Read whole matrix
+                            inputs.append(obs_mat.copy())
+                    else:
+                        # Fallback
+                        if src_type == MemoryType.SCALAR:
+                            inputs.append(0.0)
+                        elif src_type == MemoryType.VECTOR:
+                            inputs.append(np.zeros(memory.vector_size, dtype=np.float32))
+                        else:
+                            inputs.append(np.zeros(memory.matrix_shape, dtype=np.float32))
             else:
-                # Register access: interpret index based on register counts
+                # Working register access (unchanged)
                 if src_type == MemoryType.SCALAR:
                     inputs.append(float(memory.scalars[src_idx % memory.n_scalar]))
                 elif src_type == MemoryType.VECTOR:
@@ -110,10 +183,14 @@ class Instruction:
         """Human-readable representation"""
         # Format source operands
         src_parts = []
-        for src_type, src_idx, obs_flag in zip(self.source_types, self.source_indices, self.source_obs_flags):
+        for i, (src_type, src_idx, obs_flag) in enumerate(
+            zip(self.source_types, self.source_indices, self.source_obs_flags)
+        ):
             if obs_flag:
-                # Observation register
-                src_parts.append(f"obs_{src_type.value}[{src_idx}]")
+                # Observation register - show obs type and register
+                obs_reg_type = self.source_obs_register_types[i]
+                obs_reg_idx = self.source_obs_register_indices[i]
+                src_parts.append(f"obs_{obs_reg_type.value}[{obs_reg_idx}]→{src_type.value}[{src_idx}]")
             else:
                 # Working register
                 src_parts.append(f"{src_type.value}[{src_idx}]")
@@ -129,9 +206,16 @@ class Instruction:
         dest = f"{type_abbrev[self.dest_type.value]}{self.dest_index}"
         
         srcs = []
-        for t, i, obs_flag in zip(self.source_types, self.source_indices, self.source_obs_flags):
-            prefix = "o" if obs_flag else ""
-            srcs.append(f"{prefix}{type_abbrev[t.value]}{i}")
+        for idx, (t, i, obs_flag) in enumerate(
+            zip(self.source_types, self.source_indices, self.source_obs_flags)
+        ):
+            if obs_flag:
+                obs_reg_type = self.source_obs_register_types[idx]
+                obs_reg_idx = self.source_obs_register_indices[idx]
+                # Format: o<obs_type><obs_reg>:<output_type><elem_idx>
+                srcs.append(f"o{type_abbrev[obs_reg_type.value]}{obs_reg_idx}:{type_abbrev[t.value]}{i}")
+            else:
+                srcs.append(f"{type_abbrev[t.value]}{i}")
         
         return f"{dest}={self.operation.name}({','.join(srcs)})"
     
@@ -157,23 +241,38 @@ class Instruction:
         
         # Format source operands with resolved indices
         src_parts = []
-        for src_type, src_idx, obs_flag in zip(self.source_types, self.source_indices, self.source_obs_flags):
+        for i, (src_type, src_idx, obs_flag) in enumerate(
+            zip(self.source_types, self.source_indices, self.source_obs_flags)
+        ):
             if obs_flag:
-                # Observation access - compute resolved index based on type
-                if src_type == MemoryType.SCALAR:
-                    resolved = safe_mod(src_idx, h * w)
-                    src_parts.append(f"obs_{src_type.value}[{src_idx}→{resolved}]")
-                elif src_type == MemoryType.VECTOR:
-                    resolved = safe_mod(src_idx, w) if w > 0 else f"{src_idx}?0"
-                    src_parts.append(f"obs_{src_type.value}[{src_idx}→col{resolved}]")
-                elif src_type == MemoryType.MATRIX:
-                    # For matrix observation, we always return the entire observation matrix
-                    # The index is modulo by n_obs_matrix (typically 1, so always 0 = full matrix)
-                    if memory_config.n_obs_matrix > 0:
-                        obs_idx = src_idx % memory_config.n_obs_matrix
-                        src_parts.append(f"obs_{src_type.value}[{src_idx}→full_matrix{obs_idx}]")
+                # Observation access - use explicit obs register type and index
+                obs_reg_type = self.source_obs_register_types[i]
+                obs_reg_idx = self.source_obs_register_indices[i]
+                elem_idx = src_idx
+                
+                if obs_reg_type == MemoryType.SCALAR:
+                    resolved_reg = safe_mod(obs_reg_idx, memory_config.n_obs_scalar)
+                    src_parts.append(f"obs_scalar[{obs_reg_idx}→{resolved_reg}]")
+                    
+                elif obs_reg_type == MemoryType.VECTOR:
+                    resolved_reg = safe_mod(obs_reg_idx, memory_config.n_obs_vector)
+                    if src_type == MemoryType.SCALAR:
+                        resolved_elem = safe_mod(elem_idx, memory_config.vector_size)
+                        src_parts.append(f"obs_vector[{obs_reg_idx}→{resolved_reg}][{elem_idx}→{resolved_elem}]")
                     else:
-                        src_parts.append(f"obs_{src_type.value}[{src_idx}→?0]")
+                        src_parts.append(f"obs_vector[{obs_reg_idx}→{resolved_reg}]")
+                        
+                elif obs_reg_type == MemoryType.MATRIX:
+                    resolved_reg = safe_mod(obs_reg_idx, memory_config.n_obs_matrix)
+                    if src_type == MemoryType.SCALAR:
+                        flat_idx = elem_idx % (h * w) if h * w > 0 else 0
+                        row, col = flat_idx // w, flat_idx % w if w > 0 else 0
+                        src_parts.append(f"obs_matrix[{obs_reg_idx}→{resolved_reg}][{row},{col}]")
+                    elif src_type == MemoryType.VECTOR:
+                        resolved_col = safe_mod(elem_idx, w)
+                        src_parts.append(f"obs_matrix[{obs_reg_idx}→{resolved_reg}][:,{elem_idx}→{resolved_col}]")
+                    else:
+                        src_parts.append(f"obs_matrix[{obs_reg_idx}→{resolved_reg}]")
             else:
                 # Register access - compute resolved index based on register count
                 if src_type == MemoryType.SCALAR:

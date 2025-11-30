@@ -135,6 +135,7 @@ class EvolutionEngine:
                     # Create child2 from parent2 (inherits parent2's memory/constants)
                     child2 = parent2.create_offspring(parent_ids=(parent1.id, parent2.id))
                     child2.program = child_program_2
+                    
                     # mutate memory of vchildren 
                     if self.config.constant_mutation_rate > 0 and (
                         self.rng.random() < self.config.constant_mutation_rate

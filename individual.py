@@ -124,6 +124,7 @@ class Individual:
             init_scalar_range=memory_config.init_scalar_range,
             init_vector_range=memory_config.init_vector_range,
             init_matrix_range=memory_config.init_matrix_range,
+            rng=rng,  # Pass RNG for reproducible memory initialization
         )
         if mutate_constants:
             GeneticOperators(instruction_set, rng).mutate_constants(memory, rng)
