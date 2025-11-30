@@ -23,8 +23,11 @@ class EvolutionConfig:
     constant_mutation_rate: float = 0.0
     crossover_threshold: float = 0.9
     verbose: bool = True
-    checkpoint_path: Optional[str] = None  # Path to save checkpoints (overwrites on improvement)
-    stats_log_dir: Optional[str] = None  # Directory to save CSV statistics files
+    # Checkpoint settings (managed by ExperimentManager)
+    checkpoint_dir: Optional[str] = None  # Directory for checkpoints
+    checkpoint_every: Optional[int] = None  # Save every N generations (None = only on improvement)
+    # Stats logging (managed by ExperimentManager)
+    stats_log_path: Optional[str] = None  # Full path to stats CSV file
 
     def __post_init__(self) -> None:
         if self.max_generations <= 0:
@@ -67,7 +70,7 @@ class EvolutionEngine:
         self.best_fitness_ever: Optional[float] = None
         # CSV statistics logging
         self._stats_file_path: Optional[Path] = None
-        if self.config.stats_log_dir is not None:
+        if self.config.stats_log_path is not None:
             self._init_stats_logging()
 
     def run(self) -> Population:
@@ -192,16 +195,14 @@ class EvolutionEngine:
     
     def _init_stats_logging(self) -> None:
         """Initialize CSV statistics logging file with headers."""
-        if self.config.stats_log_dir is None:
+        if self.config.stats_log_path is None:
             return
         
-        stats_dir = Path(self.config.stats_log_dir)
-        stats_dir.mkdir(parents=True, exist_ok=True)
+        # Use the provided path directly (ExperimentManager handles directory creation)
+        self._stats_file_path = Path(self.config.stats_log_path)
         
-        # Generate unique filename with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"lgp_run_{timestamp}.csv"
-        self._stats_file_path = stats_dir / filename
+        # Ensure parent directory exists
+        self._stats_file_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Write CSV header
         try:
@@ -224,10 +225,10 @@ class EvolutionEngine:
                 ])
             
             if self.config.verbose:
-                print(f"✓ Statistics logging initialized: {self._stats_file_path}")
+                print(f"Statistics logging: {self._stats_file_path}")
         except Exception as e:
             if self.config.verbose:
-                print(f"⚠ Warning: Failed to initialize statistics logging: {e}")
+                print(f"Warning: Failed to initialize statistics logging: {e}")
             self._stats_file_path = None
     
     def _log_generation_stats(self, generation: int) -> None:
@@ -307,33 +308,44 @@ class EvolutionEngine:
                 ])
         except Exception as e:
             if self.config.verbose:
-                print(f"⚠ Warning: Failed to log generation statistics: {e}")
+                print(f"Warning: Failed to log generation statistics: {e}")
     
     def _check_and_save_checkpoint(self, generation: int) -> None:
-        """Check if there's a fitness improvement and save checkpoint if enabled."""
-        if self.config.checkpoint_path is None:
+        """Check if checkpoint should be saved and save if needed."""
+        if self.config.checkpoint_dir is None:
             return
         
         best_agent = self.population.get_best()
         if best_agent.fitness is None:
             return
         
-        # Check if this is an improvement
+        should_save = False
+        
+        # Check if this is a scheduled checkpoint (every N generations)
+        if self.config.checkpoint_every is not None:
+            if generation % self.config.checkpoint_every == 0:
+                should_save = True
+        
+        # Also save on fitness improvement
         is_improvement = (
             self.best_fitness_ever is None or 
             best_agent.fitness > self.best_fitness_ever
         )
-        
         if is_improvement:
             self.best_fitness_ever = best_agent.fitness
+            should_save = True
+        
+        if should_save:
             self._save_checkpoint(generation, best_agent.fitness)
     
     def _save_checkpoint(self, generation: int, fitness: float) -> None:
-        """Save the entire population to a checkpoint file."""
-        checkpoint_path = Path(self.config.checkpoint_path)
+        """Save the population to a checkpoint file with generation number."""
+        checkpoint_dir = Path(self.config.checkpoint_dir)
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
         
-        # Create directory if it doesn't exist
-        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        # Create filename with generation number
+        filename = f"gen_{generation:04d}.pkl"
+        checkpoint_path = checkpoint_dir / filename
         
         # Prepare checkpoint data
         checkpoint_data = {
@@ -344,17 +356,27 @@ class EvolutionEngine:
             'config': self.config,
         }
         
-        # Save to file (overwrites previous checkpoint)
+        # Save to file
         try:
             with open(checkpoint_path, 'wb') as f:
                 pickle.dump(checkpoint_data, f)
             
+            # Update "latest" symlink
+            latest_path = checkpoint_dir / "latest.pkl"
+            if latest_path.exists() or latest_path.is_symlink():
+                latest_path.unlink()
+            try:
+                latest_path.symlink_to(filename)
+            except OSError:
+                # Symlinks may not work on all systems, just copy
+                import shutil
+                shutil.copy2(checkpoint_path, latest_path)
+            
             if self.config.verbose:
-                print(f"✓ Checkpoint saved: generation={generation}, fitness={fitness:.4f} "
-                      f"-> {checkpoint_path}")
+                print(f"Checkpoint saved: gen={generation}, fitness={fitness:.4f} -> {checkpoint_path}")
         except Exception as e:
             if self.config.verbose:
-                print(f"⚠ Warning: Failed to save checkpoint: {e}")
+                print(f"Warning: Failed to save checkpoint: {e}")
     
     @staticmethod
     def load_checkpoint(checkpoint_path: str) -> dict:

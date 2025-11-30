@@ -1,0 +1,29 @@
+{
+  "run_id": "run_20251130_115651_test_run",
+  "start_time": "2025-11-30T11:56:51.390842",
+  "end_time": "2025-11-30T12:01:02.979133",
+  "status": "completed",
+  "config_summary": {
+    "population_size": 5,
+    "program_length": [
+      10,
+      100
+    ],
+    "elitism": 2,
+    "max_generations": 5,
+    "mutation_threshold": 0.9,
+    "crossover_threshold": 0.9,
+    "patch_strategy": "quantized",
+    "episodes": 1,
+    "max_steps": 500,
+    "n_jobs": 64,
+    "operation_set": "minimal_scalar"
+  },
+  "results": {
+    "best_fitness": 0.035000000000000024,
+    "best_generation": 1,
+    "final_generation": 4,
+    "runtime_seconds": 251.588291,
+    "runtime_formatted": "4m 11s"
+  }
+}

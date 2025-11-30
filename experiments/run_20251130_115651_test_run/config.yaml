@@ -1,0 +1,50 @@
+random_seed: 42
+memory:
+  n_scalar: 8
+  n_vector: 8
+  n_matrix: 8
+  n_obs_scalar: 0
+  n_obs_vector: 0
+  n_obs_matrix: 1
+  vector_size: 22
+  matrix_shape:
+  - 22
+  - 22
+evaluator:
+  env_id: FlappyBird-v0
+  episodes: 1
+  max_steps: 500
+  output_register: 0
+  headless: true
+  render_mode: rgb_array
+  rng_seed: 0
+  patch_strategy: quantized
+  color_channel: 2
+  normalize: true
+  quantization_factor: 0.03
+  feature_vector_size: 64
+  n_jobs: 64
+population:
+  size: 5
+  program_length:
+  - 10
+  - 100
+  elitism: 2
+  max_program_length: null
+evolution:
+  max_generations: 5
+  mutation_threshold: 0.9
+  constant_mutation_rate: 0.1
+  crossover_threshold: 0.9
+  verbose: true
+operations:
+  use_feature_vector_ops: false
+  use_minimal_scalar: true
+  use_minimal: false
+  use_automl: true
+  use_cv: true
+experiment:
+  name: test_run
+  base_dir: experiments
+  checkpoint_every: null
+  keep_n_checkpoints: null

@@ -8,9 +8,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend (no display needed)
 import matplotlib.pyplot as plt
-import pickle
 import time
-from datetime import datetime
 
 import gymnasium as gym
 from memory_system import MemoryConfig
@@ -20,6 +18,7 @@ from population import Population, PopulationConfig
 from operators import GeneticOperators
 from evaluator import FlappyBirdEvaluator, FlappyBirdEvaluatorConfig
 from evolution_engine import EvolutionEngine, EvolutionConfig
+from experiment_manager import ExperimentManager
 
 # Import config loader
 from config_loader import (
@@ -29,7 +28,7 @@ from config_loader import (
     create_population_config,
     create_evolution_config,
     get_operations_config,
-    get_output_config,
+    get_experiment_config,
 )
 
 
@@ -48,6 +47,12 @@ def main(config_path: str = "config.yaml"):
     rng = np.random.default_rng(random_seed)
     print(f"Random seed: {random_seed}")
 
+    # Create experiment manager (creates directory structure, saves config copy)
+    exp_config = get_experiment_config(config)
+    manager = ExperimentManager(config, **exp_config)
+    print(f"\nExperiment: {manager.run_id}")
+    print(f"Output dir: {manager.run_dir}")
+
     # Setup headless mode if specified in config
     eval_cfg = config.get('evaluator', {})
     headless = eval_cfg.get('headless', True)
@@ -63,23 +68,21 @@ def main(config_path: str = "config.yaml"):
         print("Running in headless mode (no windows will be displayed)")
     else:
         print("Running with human rendering (windows will be displayed)")
+    
     pop_config = create_population_config(config)
-    evolution_config = create_evolution_config(config)
+    evolution_config = create_evolution_config(config, manager)  # Pass manager for paths
     ops_config = get_operations_config(config)
-    output_config = get_output_config(config)
 
     print(f"\nMemory config: {memory_cfg}")
     
     # Setup operations based on config
     if ops_config.get('use_feature_vector_ops', False):
-        # Use 12 operations optimized for feature_vector strategy
         all_ops = FEATURE_VECTOR_OPS
         print(f"\nUsing FEATURE_VECTOR operation set: {len(all_ops)} operations")
         print("  - 8 scalar ops: add, sub, mul, div, cos, log, exp, conditional")
         print("  - 4 vector ops: dot_product, mean, sum, norm")
         print("  (Optimized for feature_vector strategy)")
     elif ops_config.get('use_minimal_scalar', False):
-        # Use minimal 8 scalar-only operations (best for feature_vector strategy)
         all_ops = MINIMAL_SCALAR_OPS
         print(f"\nUsing MINIMAL SCALAR operation set: {len(all_ops)} operations")
         print("  - add, sub, mul, div (protected)")
@@ -87,7 +90,6 @@ def main(config_path: str = "config.yaml"):
         print("  - conditional (if-then-else)")
         print("  (Scalar-only for feature_vector strategy)")
     elif ops_config.get('use_minimal', False):
-        # Use carefully selected minimal 27-operation set
         all_ops = FLAPPYBIRD_MINIMAL_OPS
         print(f"\nUsing MINIMAL operation set: {len(all_ops)} operations")
         print("  - 8 scalar arithmetic ops (add, sub, mul, div, min, max, abs, heaviside)")
@@ -96,7 +98,6 @@ def main(config_path: str = "config.yaml"):
         print("  - 6 matrix ops (image manipulation)")
         print("  - 5 CV ops (feature extraction)")
     else:
-        # Use full operation sets
         all_ops = []
         if ops_config['use_automl']:
             all_ops.extend(AUTOML_ALL_OPS)
@@ -176,23 +177,28 @@ def main(config_path: str = "config.yaml"):
     if best_agent:
         print_best_agent_info(best_agent, final_population, evaluator, memory_cfg)
         
-        # Save best agent if configured
-        if output_config.get('save_best_agent', True):
-            save_best_agent(
-                best_agent, 
-                final_population, 
-                output_config.get('best_agent_dir', 'best_agents')
-            )
+        # Save best agent via manager
+        best_gen = final_population.best_ever_generation or final_population.generation
+        agent_path = manager.save_best_agent(best_agent, best_gen)
+        print(f"\nBest agent saved to: {agent_path}")
 
-    # Generate fitness chart with timestamp
+    # Generate and save fitness chart
     print("\nGenerating fitness chart...")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    base_chart_path = output_config.get('fitness_chart_path', 'fitness_chart.png')
-    chart_path = Path(base_chart_path)
-    timestamped_chart_path = chart_path.parent / f"{chart_path.stem}_{timestamp}{chart_path.suffix}"
-    plot_fitness_chart(engine, str(timestamped_chart_path))
+    fig = create_fitness_chart(engine)
+    if fig is not None:
+        chart_path = manager.save_chart(fig, "fitness_evolution")
+        plt.close(fig)
+        print(f"Fitness chart saved to: {chart_path}")
+        print_evolution_summary(engine)
 
-    print("\nRun complete!")
+    # Finalize experiment
+    best_fitness = best_agent.fitness if best_agent and best_agent.fitness else 0.0
+    best_gen = final_population.best_ever_generation or 0
+    final_gen = final_population.generation
+    manager.finalize(best_fitness, best_gen, final_gen)
+    
+    print(f"\nExperiment complete!")
+    print(f"Results saved to: {manager.run_dir}")
     
     return best_agent
 
@@ -209,7 +215,7 @@ def get_best_agent(population):
         return population.get_best()
 
 
-def print_best_agent_info(best_agent, population, evaluator,memory_cfg):
+def print_best_agent_info(best_agent, population, evaluator, memory_cfg):
     """Print detailed information about the best agent."""
     print(f"\n{'='*70}")
     print("BEST AGENT INFORMATION")
@@ -235,45 +241,18 @@ def print_best_agent_info(best_agent, population, evaluator,memory_cfg):
     print(f"{'='*70}")
 
 
-def save_best_agent(best_agent, population, output_dir="best_agents"):
-    """Save the best agent to a pickle file.
-    
-    Args:
-        best_agent: The best agent Individual to save
-        population: Population object containing generation info
-        output_dir: Directory to save the agent file (default: "best_agents")
-    """
-    output_path = Path(output_dir)
-    output_path.mkdir(exist_ok=True, parents=True)
-    
-    # Create filename with timestamp, fitness and generation info
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    fitness_str = f"{best_agent.fitness:.4f}".replace(".", "_")
-    gen_str = ""
-    if population.best_ever is not None and best_agent.id == population.best_ever.id:
-        gen_str = f"_gen{population.best_ever_generation}"
-    
-    filename = f"best_agent_{timestamp}_fitness_{fitness_str}{gen_str}.pkl"
-    file_path = output_path / filename
-    
-    try:
-        with open(file_path, 'wb') as f:
-            pickle.dump(best_agent, f)
-        print(f"\nBest agent saved to: {file_path}")
-    except Exception as e:
-        print(f"\nWarning: Failed to save best agent: {e}")
-
-
-def plot_fitness_chart(engine, output_path="fitness_chart.png"):
-    """Plot fitness chart from evolution results.
+def create_fitness_chart(engine):
+    """Create fitness chart from evolution results.
     
     Args:
         engine: EvolutionEngine object containing evolution history
-        output_path: Path to save the fitness chart (default: "fitness_chart.png")
+        
+    Returns:
+        matplotlib Figure object, or None if no data
     """
     if len(engine.best_agent_history) == 0:
         print("No data to plot.")
-        return
+        return None
 
     generations = [info.generation for info in engine.best_agent_history]
     fitnesses = [info.fitness for info in engine.best_agent_history]
@@ -334,15 +313,15 @@ def plot_fitness_chart(engine, output_path="fitness_chart.png"):
     ax4.set_xlim(-0.5, max(generations) + 0.5)
 
     plt.tight_layout()
-    
-    # Save figure
-    chart_path = Path(output_path)
-    chart_path.parent.mkdir(exist_ok=True, parents=True)
-    plt.savefig(chart_path, dpi=150, bbox_inches='tight')
-    plt.close(fig)  # Clean up memory
-    print(f"Fitness chart saved to: {chart_path}")
+    return fig
 
-    # Print summary statistics
+
+def print_evolution_summary(engine):
+    """Print evolution summary statistics."""
+    generations = [info.generation for info in engine.best_agent_history]
+    fitnesses = [info.fitness for info in engine.best_agent_history]
+    code_rates = [info.effective_code_rate for info in engine.best_agent_history]
+    
     print(f"\n{'='*60}")
     print("EVOLUTION SUMMARY")
     print(f"{'='*60}")
@@ -357,4 +336,3 @@ if __name__ == "__main__":
     # Allow config file to be passed as command-line argument
     config_file = sys.argv[1] if len(sys.argv) > 1 else "config.yaml"
     main(config_path=config_file)
-

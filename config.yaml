@@ -9,12 +9,12 @@ random_seed: 42  # Random seed for reproducibility
 memory:
   n_scalar: 8          # Number of working scalar registers
   n_vector: 8          # Number of working vector registers
-  n_matrix: 1          # Number of working matrix registers
+  n_matrix: 8          # Number of working matrix registers
   n_obs_scalar: 0      # Number of scalar observation registers
-  n_obs_vector: 1      # Stores the 1D feature vector (64 elements)
+  n_obs_vector: 0      # Stores the 1D feature vector (64 elements)
   n_obs_matrix: 1      # Stores the tiled feature matrix (64×64)
-  vector_size: 64      # MUST match feature_vector_size!
-  matrix_shape: [64, 64]  # MUST match [feature_vector_size, feature_vector_size]!
+  vector_size: 22      # MUST match feature_vector_size!
+  matrix_shape: [22, 22]  # MUST match [feature_vector_size, feature_vector_size]!
 
 # Evaluator Configuration
 # Settings for the FlappyBird environment evaluator
@@ -28,7 +28,7 @@ evaluator:
   rng_seed: 0             # Random seed for evaluator (uses random_seed if not specified)
   
   # Image Processing Parameters
-  patch_strategy: "feature_vector"  # Strategy: "full_image", "quantized", or "feature_vector"
+  patch_strategy: "quantized"  # Strategy: "full_image", "quantized", or "feature_vector"
   color_channel: 2           # Color channel: 0=R, 1=G, 2=B, -1=grayscale
   normalize: true             # Normalize pixel values to [0, 1]
   quantization_factor: 0.03   # Downsampling factor for quantized strategy
@@ -53,8 +53,6 @@ evolution:
   constant_mutation_rate: 0.1 # Probability of mutating constants (0.0-1.0)
   crossover_threshold: 0.9     # Probability threshold for crossover (0.0-1.0)
   verbose: true               # Print detailed progress information
-  checkpoint_path: "checkpoints/best_population.pkl"  # Path to save checkpoints (null to disable)
-  stats_log_dir: "stats_log"   # Directory to save CSV statistics (null to disable)
 
 # Operations Configuration
 # Which operation sets to include (checked in order, first true wins)
@@ -66,13 +64,10 @@ operations:
   use_automl: true              # Include AutoML operations (only if above are false)
   use_cv: true                  # Include CV operations (only if above are false)
 
-# Output Configuration
-# Settings for saving results
-# Note: All output files include timestamps for unique identification
-# Example: best_agent_20251126_143052_fitness_0_1234_gen5.pkl
-#          fitness_chart_20251126_143052.png
-output:
-  save_best_agent: true              # Whether to save best agent to file
-  best_agent_dir: "best_agents"      # Directory for best agent files (timestamped)
-  fitness_chart_path: "fitness_chart.png"  # Base path for fitness chart (timestamp added automatically)
-
+# Experiment Configuration
+# Unified output management - all outputs go under experiments/<run_id>/
+experiment:
+  name: "quantized_Stephen_min_set"                    # Custom name suffix for run ID (null = timestamp only)
+  base_dir: "experiments"       # Base directory for all experiment runs
+  checkpoint_every: null          # Save checkpoint every N generations (null = only on improvement)
+  keep_n_checkpoints: null      # Keep last N checkpoints (null = keep all)

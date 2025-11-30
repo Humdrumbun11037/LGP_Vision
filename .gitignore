@@ -1,7 +1,9 @@
 # Data files and outputs
-stats_log/
-checkpoints/
-best_agents/
+experiments/          # Unified experiment outputs (new)
+stats_log/            # Legacy stats directory
+checkpoints/          # Legacy checkpoints directory
+best_agents/          # Legacy best agents directory
+checkpoints_sanity/   # Sanity check checkpoints
 *.pkl
 *.csv
 

@@ -50,6 +50,7 @@ class FlappyBirdEnv(gym.Env):
 
         self._last_action = 0
         self._score = 0
+        self._pipe_just_passed = False
 
     @property
     def observation(self) -> ObsType:
@@ -58,8 +59,7 @@ class FlappyBirdEnv(gym.Env):
 
     @property
     def reward(self) -> SupportsFloat:
-        if any([not pipe.passed and pipe.x < self._bird.x
-                for pipe in self._pipes]):
+        if self._pipe_just_passed:
             return 1
         elif not self.terminated:
             return 0.001
@@ -147,6 +147,7 @@ class FlappyBirdEnv(gym.Env):
             self._bird.jump()
 
         add_pipe = False
+        self._pipe_just_passed = False
         self._bird.move()
 
         to_be_removed = []
@@ -157,6 +158,7 @@ class FlappyBirdEnv(gym.Env):
             if not pipe.passed and pipe.x < self._bird.x:
                 self._score += 1
                 pipe.passed = True
+                self._pipe_just_passed = True
                 add_pipe = True
 
             pipe.move()
@@ -230,6 +232,7 @@ class FlappyBirdEnv(gym.Env):
 
         self._last_action = 0
         self._score = 0
+        self._pipe_just_passed = False
 
         if self.render_mode is not None:
             self.render()
@@ -272,7 +275,6 @@ class FlappyBirdEnv(gym.Env):
                 self._surface = pygame.display.set_mode(self._shape)
             elif self.render_mode == "rgb_array":
                 self._surface = pygame.Surface(self._shape)
-                return self.observation
 
         assert self._surface is not None, \
             "Something went wrong with pygame. This should never happen."

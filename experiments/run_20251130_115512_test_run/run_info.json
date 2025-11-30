@@ -1,0 +1,23 @@
+{
+  "run_id": "run_20251130_115512_test_run",
+  "start_time": "2025-11-30T11:55:12.154315",
+  "end_time": null,
+  "status": "running",
+  "config_summary": {
+    "population_size": 5,
+    "program_length": [
+      10,
+      100
+    ],
+    "elitism": 2,
+    "max_generations": 5,
+    "mutation_threshold": 0.9,
+    "crossover_threshold": 0.9,
+    "patch_strategy": "feature_vector",
+    "episodes": 1,
+    "max_steps": 500,
+    "n_jobs": 64,
+    "operation_set": "minimal_scalar"
+  },
+  "results": null
+}

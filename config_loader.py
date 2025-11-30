@@ -2,12 +2,15 @@
 
 import yaml
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TYPE_CHECKING
 
 from memory_system import MemoryConfig
 from evaluator import FlappyBirdEvaluatorConfig
 from population import PopulationConfig
 from evolution_engine import EvolutionConfig
+
+if TYPE_CHECKING:
+    from experiment_manager import ExperimentManager
 
 
 def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
@@ -136,7 +139,7 @@ def create_evaluator_config(config: Dict[str, Any]) -> FlappyBirdEvaluatorConfig
         color_channel=eval_cfg.get('color_channel', 1),
         normalize=eval_cfg.get('normalize', True),
         quantization_factor=eval_cfg.get('quantization_factor', 0.5),
-        feature_vector_size=eval_cfg.get('feature_vector_size', 256),
+        feature_vector_size=eval_cfg.get('feature_vector_size', 64),
         n_jobs=n_jobs,
         output_registers=output_registers,  # Set output_registers explicitly
     )
@@ -179,28 +182,33 @@ def create_population_config(config: Dict[str, Any]) -> PopulationConfig:
     )
 
 
-def create_evolution_config(config: Dict[str, Any]) -> EvolutionConfig:
+def create_evolution_config(
+    config: Dict[str, Any],
+    manager: Optional['ExperimentManager'] = None,
+) -> EvolutionConfig:
     """Create EvolutionConfig from YAML config.
     
     Args:
         config: Dictionary containing configuration sections
+        manager: Optional ExperimentManager to provide output paths
         
     Returns:
         EvolutionConfig object
-        
-    Raises:
-        ValueError: If required fields are missing or invalid
     """
     evo_cfg = config.get('evolution', {})
+    exp_cfg = config.get('experiment', {})
     
-    # Handle null checkpoint_path and stats_log_dir
-    checkpoint_path = evo_cfg.get('checkpoint_path')
-    if checkpoint_path == 'null' or checkpoint_path is None:
-        checkpoint_path = None
-    
-    stats_log_dir = evo_cfg.get('stats_log_dir')
-    if stats_log_dir == 'null' or stats_log_dir is None:
-        stats_log_dir = None
+    # Get checkpoint and stats paths from manager if provided
+    if manager is not None:
+        # Use manager's paths
+        checkpoint_dir = str(manager.checkpoints_dir)
+        stats_log_path = str(manager.get_stats_csv_path())
+        checkpoint_every = manager.checkpoint_every
+    else:
+        # No manager - disable checkpoints and stats logging
+        checkpoint_dir = None
+        stats_log_path = None
+        checkpoint_every = exp_cfg.get('checkpoint_every')
     
     return EvolutionConfig(
         max_generations=evo_cfg.get('max_generations', 100),
@@ -208,8 +216,9 @@ def create_evolution_config(config: Dict[str, Any]) -> EvolutionConfig:
         constant_mutation_rate=evo_cfg.get('constant_mutation_rate', 0.0),
         crossover_threshold=evo_cfg.get('crossover_threshold', 0.9),
         verbose=evo_cfg.get('verbose', True),
-        checkpoint_path=checkpoint_path,
-        stats_log_dir=stats_log_dir,
+        checkpoint_dir=checkpoint_dir,
+        checkpoint_every=checkpoint_every,
+        stats_log_path=stats_log_path,
     )
 
 
@@ -220,28 +229,45 @@ def get_operations_config(config: Dict[str, Any]) -> Dict[str, bool]:
         config: Dictionary containing configuration sections
         
     Returns:
-        Dictionary with 'use_minimal', 'use_automl', and 'use_cv' boolean flags
+        Dictionary with operation set boolean flags (checked in order, first true wins)
     """
     ops_cfg = config.get('operations', {})
     return {
-        'use_minimal': ops_cfg.get('use_minimal', False),  # Use minimal 24-op set for FlappyBird
+        'use_feature_vector_ops': ops_cfg.get('use_feature_vector_ops', False),
+        'use_minimal_scalar': ops_cfg.get('use_minimal_scalar', False),
+        'use_minimal': ops_cfg.get('use_minimal', False),
         'use_automl': ops_cfg.get('use_automl', True),
         'use_cv': ops_cfg.get('use_cv', True),
     }
 
 
-def get_output_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Get output configuration.
+def get_experiment_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Get experiment configuration.
     
     Args:
         config: Dictionary containing configuration sections
         
     Returns:
-        Dictionary with output settings
+        Dictionary with experiment settings for ExperimentManager
     """
-    return config.get('output', {
-        'save_best_agent': True,
-        'best_agent_dir': 'best_agents',
-        'fitness_chart_path': 'fitness_chart.png',
-    })
-
+    exp_cfg = config.get('experiment', {})
+    
+    # Handle null values
+    name = exp_cfg.get('name')
+    if name == 'null':
+        name = None
+    
+    keep_n = exp_cfg.get('keep_n_checkpoints')
+    if keep_n == 'null':
+        keep_n = None
+    
+    checkpoint_every = exp_cfg.get('checkpoint_every')
+    if checkpoint_every == 'null':
+        checkpoint_every = None
+    
+    return {
+        'name': name,
+        'base_dir': exp_cfg.get('base_dir', 'experiments'),
+        'checkpoint_every': checkpoint_every,
+        'keep_n_checkpoints': keep_n,
+    }
