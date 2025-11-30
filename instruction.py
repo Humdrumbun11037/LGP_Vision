@@ -70,8 +70,8 @@ class Instruction:
         ):
             if obs_flag:
                 # Observation access - use explicit obs register type and index
-                obs_reg_type = self.source_obs_register_types[i]
-                obs_reg_idx = self.source_obs_register_indices[i]
+                obs_reg_type = self.source_obs_register_types[i] # gets the type of obs its accessing - a valid obs type it can access 
+                obs_reg_idx = self.source_obs_register_indices[i] # gets index of that its accessing 
                 elem_idx = src_idx  # Reuse source_indices as element index for extraction
                 
                 if obs_reg_type == MemoryType.SCALAR:
@@ -81,23 +81,25 @@ class Instruction:
                         inputs.append(float(value))
                     else:
                         # Fallback: return 0.0 if no scalar observations available
-                        inputs.append(0.0)
+                        raise ValueError(
+                                f"Cannot read from scalar observation register {obs_reg_idx}: "
+                                f"no scalar observations available (n_obs_scalar={memory.n_obs_scalar})")
                     
                 elif obs_reg_type == MemoryType.VECTOR:
                     if memory.n_obs_vector > 0:
                         obs_vec = memory.obs_vectors[obs_reg_idx % memory.n_obs_vector]
                         if src_type == MemoryType.SCALAR:
                             # Extract element from vector
-                            inputs.append(float(obs_vec[elem_idx % memory.vector_size]))
+                            inputs.append(float(obs_vec[elem_idx % memory.vector_size])) # gets an index of the element 
                         else:  # VECTOR
                             # Read whole vector
                             inputs.append(obs_vec.copy())
                     else:
-                        # Fallback
-                        if src_type == MemoryType.SCALAR:
-                            inputs.append(0.0)
-                        else:
-                            inputs.append(np.zeros(memory.vector_size, dtype=np.float32))
+                        raise ValueError(
+                                    f"Cannot read from vector observation register {obs_reg_idx}: "
+                                    f"no vector observations available (n_obs_vector={memory.n_obs_vector}). "
+                                    f"Attempted to extract {src_type.value} from vector observation."
+                                )
                         
                 elif obs_reg_type == MemoryType.MATRIX:
                     if memory.n_obs_matrix > 0:
@@ -118,12 +120,11 @@ class Instruction:
                             inputs.append(obs_mat.copy())
                     else:
                         # Fallback
-                        if src_type == MemoryType.SCALAR:
-                            inputs.append(0.0)
-                        elif src_type == MemoryType.VECTOR:
-                            inputs.append(np.zeros(memory.vector_size, dtype=np.float32))
-                        else:
-                            inputs.append(np.zeros(memory.matrix_shape, dtype=np.float32))
+                         raise ValueError(
+                            f"Cannot read from matrix observation register {obs_reg_idx}: "
+                            f"no matrix observations available (n_obs_matrix={memory.n_obs_matrix}). "
+                            f"Attempted to extract {src_type.value} from matrix observation."
+                        )
             else:
                 # Working register access (unchanged)
                 if src_type == MemoryType.SCALAR:

@@ -39,21 +39,6 @@ class InstructionSet:
         self._available_obs_types = self._get_available_obs_types()
         
         # Pre-compute index ranges for efficiency
-        self._source_ranges = {
-            MemoryType.SCALAR: (
-                list(range(-self.n_obs_scalar, 0)) +  # Obs: [-n, ..., -1]
-                list(range(0, self.n_scalar))           # Work: [0, ..., n-1]
-            ),
-            MemoryType.VECTOR: (
-                list(range(-self.n_obs_vector, 0)) +
-                list(range(0, self.n_vector))
-            ),
-            MemoryType.MATRIX: (
-                list(range(-self.n_obs_matrix, 0)) +
-                list(range(0, self.n_matrix))
-            ),
-        }
-        
         self._dest_ranges = {
             MemoryType.SCALAR: list(range(0, self.n_scalar)),    # Work only
             MemoryType.VECTOR: list(range(0, self.n_vector)),
@@ -99,7 +84,7 @@ class InstructionSet:
         
         if not valid_types:
             # Fallback: use any available obs type
-            return rng.choice(self._available_obs_types)
+            return None
         
         return rng.choice(valid_types)
     
@@ -145,8 +130,8 @@ class InstructionSet:
             
             # Generate observation register type and index
             if obs_flag:
-                obs_reg_type = self._choose_obs_register_type(src_type, rng)
-                obs_reg_idx = self._get_random_obs_register_index(obs_reg_type, rng)
+                obs_reg_type = self._choose_obs_register_type(src_type, rng) # gets a valid observation type 
+                obs_reg_idx = self._get_random_obs_register_index(obs_reg_type, rng) # gets a valid type 
             else:
                 # Placeholder values (not used when obs_flag=False)
                 obs_reg_type = MemoryType.SCALAR

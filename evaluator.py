@@ -571,12 +571,7 @@ class FlappyBirdEvaluator(FitnessEvaluator):
                 interpolation=cv2.INTER_AREA
             )
             
-            # Convert back to float32
-            if self.normalize:
-                quantized = quantized_uint8.astype(np.float32) / 255.0
-            else:
-                quantized = quantized_uint8.astype(np.float32)
-            
+          
             # Step 3: Stretch horizontally to create a square matrix
             # The final height is quantized_h, so we stretch width to match
             final_size = quantized_h  # Square matrix: height = width
