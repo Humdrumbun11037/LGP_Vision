@@ -69,7 +69,7 @@ echo "Random seed: $seed"
 echo "=========================================="
 
 # Run evolution
-python run_flappy_bird.py config.yaml
+python run_flappy_bird.py config_feature.yaml
 
 echo "=========================================="
 echo "Job completed at $(date)"
