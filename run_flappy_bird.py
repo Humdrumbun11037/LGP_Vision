@@ -13,7 +13,7 @@ import time
 import gymnasium as gym
 from memory_system import MemoryConfig
 from instruction_set import InstructionSet
-from operation import AUTOML_ALL_OPS, CV_ALL_OPS, FLAPPYBIRD_MINIMAL_OPS, MINIMAL_SCALAR_OPS, FEATURE_VECTOR_OPS
+from operation import AUTOML_ALL_OPS, AUTOML_NO_RANDOM_OPS, CV_ALL_OPS, FLAPPYBIRD_MINIMAL_OPS, MINIMAL_SCALAR_OPS, FEATURE_VECTOR_OPS
 from population import Population, PopulationConfig
 from operators import GeneticOperators
 from evaluator import FlappyBirdEvaluator, FlappyBirdEvaluatorConfig
@@ -92,19 +92,24 @@ def main(config_path: str = "config.yaml"):
     elif ops_config.get('use_minimal', False):
         all_ops = FLAPPYBIRD_MINIMAL_OPS
         print(f"\nUsing MINIMAL operation set: {len(all_ops)} operations")
-        print("  - 8 scalar arithmetic ops (add, sub, mul, div, min, max, abs, heaviside)")
+        print("  - 9 scalar arithmetic ops (add, sub, mul, div, min, max, abs, heaviside, conditional)")
         print("  - 3 scalar trig ops (sin, cos, arctan)")
         print("  - 5 vector ops (intermediate processing)")
         print("  - 6 matrix ops (image manipulation)")
         print("  - 5 CV ops (feature extraction)")
     else:
         all_ops = []
-        if ops_config['use_automl']:
+        if ops_config.get('use_automl_no_random', False):
+            all_ops.extend(AUTOML_NO_RANDOM_OPS)
+            print(f"\nUsing AutoML operations (without random/gaussian/constant): {len(AUTOML_NO_RANDOM_OPS)} operations")
+        elif ops_config['use_automl']:
             all_ops.extend(AUTOML_ALL_OPS)
         if ops_config['use_cv']:
             all_ops.extend(CV_ALL_OPS)
         print(f"\nTotal operations: {len(all_ops)}")
-        if ops_config['use_automl']:
+        if ops_config.get('use_automl_no_random', False):
+            print(f"  - AutoML operations (no random): {len(AUTOML_NO_RANDOM_OPS)}")
+        elif ops_config['use_automl']:
             print(f"  - AutoML operations: {len(AUTOML_ALL_OPS)}")
         if ops_config['use_cv']:
             print(f"  - CV operations: {len(CV_ALL_OPS)}")

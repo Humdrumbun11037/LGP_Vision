@@ -229,6 +229,24 @@ class GeneticOperators:
             factors = rng.uniform(0.5, 2.0, size=memory.matrices.shape)
             signs = np.where(rng.random(memory.matrices.shape) < 0.1, -1.0, 1.0)
             memory.matrices *= factors * signs
+    def mutate_constants_in_place(self, memory: MemoryBank, rng=None):
+        if rng is None:
+            rng = np.random.default_rng()
+        
+        if memory.scalars.size:
+            factors = rng.uniform(0.5, 2.0, size=memory.scalars.shape)
+            factors[rng.random(memory.scalars.shape) < 0.1] *= -1
+            memory.scalars *= factors
+        
+        if memory.vectors.size:
+            factors = rng.uniform(0.5, 2.0, size=memory.vectors.shape)
+            factors[rng.random(memory.vectors.shape) < 0.1] *= -1
+            memory.vectors *= factors
+        
+        if memory.matrices.size:
+            factors = rng.uniform(0.5, 2.0, size=memory.matrices.shape)
+            factors[rng.random(memory.matrices.shape) < 0.1] *= -1
+            memory.matrices *= factors
 
     def mutate_constants_naive(self, memory: MemoryBank, rng=None):
         if rng is None:
@@ -361,7 +379,7 @@ if __name__ == "__main__":
     naive_memory = big_memory.copy()
 
     start = time.perf_counter()
-    ops.mutate_constants(vec_memory, rng)
+    ops.mutate_constants_in_place(vec_memory, rng)
     vec_time = time.perf_counter() - start
 
     start = time.perf_counter()

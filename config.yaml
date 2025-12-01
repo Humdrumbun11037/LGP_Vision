@@ -30,7 +30,7 @@ evaluator:
   # Image Processing Parameters
   patch_strategy: "quantized"  # Strategy: "full_image", "quantized", or "feature_vector"
   color_channel: 2           # Color channel: 0=R, 1=G, 2=B, -1=grayscale
-  normalize: true             # Normalize pixel values to [0, 1]
+  normalize: false             # Normalize pixel values to [0, 1]
   quantization_factor: 0.03   # Downsampling factor for quantized strategy
   feature_vector_size: 64    # Feature vector dimension for feature_vector strategy
   
@@ -59,15 +59,17 @@ evolution:
 operations:
   use_feature_vector_ops: false  # 12 ops: 8 scalar + 4 vector (dot_product, mean, sum, norm)
                                 # Best for feature_vector strategy!
-  use_minimal_scalar: true     # 8 scalar-only ops (simpler baseline)
-  use_minimal: false            # 27-op set (for quantized/full_image strategies)
-  use_automl: true              # Include AutoML operations (only if above are false)
-  use_cv: true                  # Include CV operations (only if above are false)
+  use_minimal_scalar: false     # 8 scalar-only ops (simpler baseline)
+  use_minimal: true            # 28-op set (for quantized/full_image strategies)
+  use_automl_no_random: false  # AutoML operations without constant/random/gaussian ops
+                                # (only if above are false, checked before use_automl)
+  use_automl: false              # Include AutoML operations (only if above are false)
+  use_cv: false                  # Include CV operations (only if above are false)
 
 # Experiment Configuration
 # Unified output management - all outputs go under experiments/<run_id>/
 experiment:
-  name: "quantized_Stephen_min_set"                    # Custom name suffix for run ID (null = timestamp only)
+  name: "quantized_min_set_28"                    # Custom name suffix for run ID (null = timestamp only)
   base_dir: "experiments"       # Base directory for all experiment runs
   checkpoint_every: null          # Save checkpoint every N generations (null = only on improvement)
   keep_n_checkpoints: null      # Keep last N checkpoints (null = keep all)

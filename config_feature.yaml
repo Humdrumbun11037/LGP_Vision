@@ -57,17 +57,19 @@ evolution:
 # Operations Configuration
 # Which operation sets to include (checked in order, first true wins)
 operations:
-  use_feature_vector_ops: false  # 12 ops: 8 scalar + 4 vector (dot_product, mean, sum, norm)
+  use_feature_vector_ops: True  # 12 ops: 8 scalar + 4 vector (dot_product, mean, sum, norm)
                                 # Best for feature_vector strategy!
   use_minimal_scalar: false     # 8 scalar-only ops (simpler baseline)
-  use_minimal: false            # 27-op set (for quantized/full_image strategies)
+  use_minimal: false            # 28-op set (for quantized/full_image strategies)
+  use_automl_no_random: false  # AutoML operations without constant/random/gaussian ops
+                                # (only if above are false, checked before use_automl)
   use_automl: true              # Include AutoML operations (only if above are false)
   use_cv: false                  # Include CV operations (only if above are false)
 
 # Experiment Configuration
 # Unified output management - all outputs go under experiments/<run_id>/
 experiment:
-  name: "feature_automl_no_cv"                    # Custom name suffix for run ID (null = timestamp only)
+  name: "feature_vector_ops"                    # Custom name suffix for run ID (null = timestamp only)
   base_dir: "experiments"       # Base directory for all experiment runs
   checkpoint_every: null          # Save checkpoint every N generations (null = only on improvement)
   keep_n_checkpoints: null      # Keep last N checkpoints (null = keep all)

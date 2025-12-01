@@ -2379,6 +2379,18 @@ AUTOML_ALL_OPS = (
     AUTOML_CONSTANT_RANDOM_OPS
 )
 
+# AutoML operations without constant/random/gaussian operators
+AUTOML_NO_RANDOM_OPS = (
+    AUTOML_ARITHMETIC_OPS +
+    AUTOML_TRIGONOMETRIC_OPS +
+    AUTOML_PRECALC_OPS +
+    AUTOML_VECTOR_OPS +
+    AUTOML_MATRIX_OPS +
+    AUTOML_MINMAX_OPS +
+    AUTOML_STATISTICAL_OPS
+    # Note: Excludes AUTOML_CONSTANT_RANDOM_OPS
+)
+
 # ========== CV OPERATIONS - EDGE DETECTION ==========
 
 def _normalize_to_uint8(matrix: np.ndarray) -> np.ndarray:
@@ -3029,12 +3041,38 @@ CV_ALL_OPS = (
     CV_POOLING_OPS
 )
 
+# ==================== CONDITIONAL OPERATION ====================
+
+class ScalarConditionalOp(Operation):
+    """Conditional operation: IF a < b THEN -a ELSE a
+    
+    This implements the classic LGP conditional operator that provides
+    branching behavior without explicit control flow.
+    """
+    def input_types(self) -> List[MemoryType]:
+        return [MemoryType.SCALAR, MemoryType.SCALAR]
+    
+    def output_type(self) -> MemoryType:
+        return MemoryType.SCALAR
+    
+    def execute(self, a: float, b: float) -> float:
+        return -a if a < b else a
+    
+    @property
+    def name(self) -> str:
+        return "scalar_conditional"
+    
+    @property
+    def differentiable(self) -> bool:
+        return False  # Has discontinuity at a=b
+
+
 # ==================== MINIMAL OPERATION SET FOR FLAPPYBIRD ====================
-# Carefully selected 27 operations for FlappyBird evolution
+# Carefully selected 28 operations for FlappyBird evolution
 # Balanced across types with essential cross-type operations
 
 FLAPPYBIRD_MINIMAL_OPS = [
-    # SCALAR ARITHMETIC (8 ops) - Decision making
+    # SCALAR ARITHMETIC (9 ops) - Decision making
     AutoMLScalarAddOp,
     AutoMLScalarSubOp,
     AutoMLScalarMulOp,
@@ -3043,6 +3081,7 @@ FLAPPYBIRD_MINIMAL_OPS = [
     AutoMLScalarMaxOp,
     AutoMLScalarAbsOp,
     AutoMLScalarHeavisideOp,  # Critical for binary decisions
+    ScalarConditionalOp,      # IF a < b THEN -a ELSE a (branching behavior)
     
     # SCALAR TRIG (3 ops) - Non-linear transformations
     AutoMLScalarSinOp,        # Oscillation, periodic patterns
@@ -3074,30 +3113,6 @@ FLAPPYBIRD_MINIMAL_OPS = [
 
 # ==================== MINIMAL SCALAR OPERATIONS FOR TESTING ====================
 # Based on the 8 fundamental LGP operations: {+, -, *, /, cos, log, exp, conditional}
-
-class ScalarConditionalOp(Operation):
-    """Conditional operation: IF a < b THEN -a ELSE a
-    
-    This implements the classic LGP conditional operator that provides
-    branching behavior without explicit control flow.
-    """
-    def input_types(self) -> List[MemoryType]:
-        return [MemoryType.SCALAR, MemoryType.SCALAR]
-    
-    def output_type(self) -> MemoryType:
-        return MemoryType.SCALAR
-    
-    def execute(self, a: float, b: float) -> float:
-        return -a if a < b else a
-    
-    @property
-    def name(self) -> str:
-        return "scalar_conditional"
-    
-    @property
-    def differentiable(self) -> bool:
-        return False  # Has discontinuity at a=b
-
 
 # Minimal 8 scalar operations for testing
 # Reference: Brameier & Banzhaf's recommended minimal set

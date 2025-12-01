@@ -236,6 +236,7 @@ def get_operations_config(config: Dict[str, Any]) -> Dict[str, bool]:
         'use_feature_vector_ops': ops_cfg.get('use_feature_vector_ops', False),
         'use_minimal_scalar': ops_cfg.get('use_minimal_scalar', False),
         'use_minimal': ops_cfg.get('use_minimal', False),
+        'use_automl_no_random': ops_cfg.get('use_automl_no_random', False),
         'use_automl': ops_cfg.get('use_automl', True),
         'use_cv': ops_cfg.get('use_cv', True),
     }

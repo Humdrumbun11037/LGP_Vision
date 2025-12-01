@@ -59,7 +59,9 @@ evolution:
 operations:
   use_feature_vector_ops: false  # 12 ops: 8 scalar + 4 vector
   use_minimal_scalar: false      # 8 scalar-only ops
-  use_minimal: true              # 27-op set (for quantized/full_image strategies)
+  use_minimal: true              # 28-op set (for quantized/full_image strategies)
+  use_automl_no_random: false   # AutoML operations without constant/random/gaussian ops
+                                # (only if above are false, checked before use_automl)
   use_automl: true               # Include AutoML operations (only if above are false)
   use_cv: true                   # Include CV operations (only if above are false)
 
