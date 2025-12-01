@@ -17,7 +17,16 @@ cd "$SLURM_SUBMIT_DIR" || {
     exit 1
 }
 
-seed=${1:-42}
+# Get seed from command line argument (required)
+seed=$1
+config_file=${2:-config.yaml}
+
+if [ -z "$seed" ]; then
+    echo "ERROR: Seed is required as first argument"
+    echo "Usage: sbatch submit_evolution.sh <seed> [config_file]"
+    echo "Example: sbatch submit_evolution.sh 42 config.yaml"
+    exit 1
+fi
 
 # Load required modules BEFORE creating virtualenv
 # See: https://docs.alliancecan.ca/wiki/OpenCV
@@ -65,11 +74,12 @@ echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURM_NODELIST"
 echo "CPUs: $SLURM_CPUS_PER_TASK"
 echo "Working directory: $(pwd)"
-echo "Random seed: $seed"
+echo "Random seed: $seed (required)"
+echo "Config file: $config_file"
 echo "=========================================="
 
-# Run evolution
-python run_flappy_bird.py config.yaml
+# Run evolution with seed passed as command line argument
+python run_flappy_bird.py "$config_file" --seed "$seed"
 
 echo "=========================================="
 echo "Job completed at $(date)"

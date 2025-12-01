@@ -116,6 +116,9 @@ class ExperimentManager:
         """Extract key configuration values for quick reference."""
         summary = {}
         
+        # Store seed
+        summary["random_seed"] = self.config.get("random_seed")
+        
         # Population config
         pop_cfg = self.config.get("population", {})
         summary["population_size"] = pop_cfg.get("size")

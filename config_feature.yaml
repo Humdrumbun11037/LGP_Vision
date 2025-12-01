@@ -2,7 +2,7 @@
 # All parameters for the LGP evolution system
 
 # Global Settings
-random_seed: 0  # Random seed for reproducibility
+# Note: random_seed is provided via command line (--seed argument)
 
 # Memory Configuration
 # Defines the memory structure for LGP programs
@@ -25,7 +25,7 @@ evaluator:
   output_register: 0      # Scalar register to read action from
   headless: true            # Use headless mode (faster, no windows). If false, uses "human" rendering
   render_mode: "rgb_array"        # Rendering mode: "human", "rgb_array", or null (auto-set by headless if null)
-  rng_seed: 0             # Random seed for evaluator (uses random_seed if not specified)
+  # Note: rng_seed automatically syncs with random_seed from command line
   
   # Image Processing Parameters
   patch_strategy: "feature_vector"  # Strategy: "full_image", "quantized", or "feature_vector"
@@ -57,13 +57,13 @@ evolution:
 # Operations Configuration
 # Which operation sets to include (checked in order, first true wins)
 operations:
-  use_feature_vector_ops: True  # 12 ops: 8 scalar + 4 vector (dot_product, mean, sum, norm)
+  use_feature_vector_ops: true  # 12 ops: 8 scalar + 4 vector (dot_product, mean, sum, norm)
                                 # Best for feature_vector strategy!
   use_minimal_scalar: false     # 8 scalar-only ops (simpler baseline)
   use_minimal: false            # 28-op set (for quantized/full_image strategies)
   use_automl_no_random: false  # AutoML operations without constant/random/gaussian ops
                                 # (only if above are false, checked before use_automl)
-  use_automl: true              # Include AutoML operations (only if above are false)
+  use_automl: false              # Include AutoML operations (only if above are false)
   use_cv: false                  # Include CV operations (only if above are false)
 
 # Experiment Configuration

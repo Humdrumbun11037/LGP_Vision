@@ -2,7 +2,7 @@
 # All parameters for the LGP evolution system
 
 # Global Settings
-random_seed: 0  # Random seed for reproducibility
+# Note: random_seed is provided via command line (--seed argument)
 
 # Memory Configuration
 # Defines the memory structure for LGP programs
@@ -20,12 +20,12 @@ memory:
 # Settings for the FlappyBird environment evaluator
 evaluator:
   env_id: "FlappyBird-v0"  # Gymnasium environment ID
-  episodes: 1             # Number of episodes per evaluation
+  episodes: 5           # Number of episodes per evaluation
   max_steps: 500           # Maximum steps per episode
   output_register: 0      # Scalar register to read action from
   headless: true            # Use headless mode (faster, no windows). If false, uses "human" rendering
   render_mode: "rgb_array"        # Rendering mode: "human", "rgb_array", or null (auto-set by headless if null)
-  rng_seed: 0             # Random seed for evaluator (uses random_seed if not specified)
+  # Note: rng_seed automatically syncs with random_seed from command line
   
   # Image Processing Parameters
   patch_strategy: "quantized"  # Strategy: "full_image", "quantized", or "feature_vector"

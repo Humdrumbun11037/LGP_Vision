@@ -2,7 +2,9 @@
 """Run FlappyBird evolution and generate fitness chart."""
 
 import sys
+import argparse
 from pathlib import Path
+from typing import Optional
 import flappy_bird_env  # noqa
 import numpy as np
 import matplotlib
@@ -32,23 +34,35 @@ from config_loader import (
 )
 
 
-def main(config_path: str = "config.yaml"):
+def main(config_path: str = "config.yaml", random_seed: Optional[int] = None):
     """Run FlappyBird evolution.
     
     Args:
         config_path: Path to YAML configuration file
+        random_seed: Random seed (required, overrides config)
     """
+    if random_seed is None:
+        raise ValueError("Random seed must be provided via --seed argument")
+    
     # Load configuration from YAML
     print(f"Loading configuration from: {config_path}")
     config = load_config(config_path)
     
-    # Setup random seed from config
-    random_seed = config.get('random_seed', 42)
+    # Override config with command line seed
+    config['random_seed'] = random_seed
     rng = np.random.default_rng(random_seed)
-    print(f"Random seed: {random_seed}")
+    print(f"Using random seed: {random_seed}")
 
     # Create experiment manager (creates directory structure, saves config copy)
     exp_config = get_experiment_config(config)
+    
+    # Always append seed to experiment name
+    exp_name = exp_config.get('name', '')
+    if exp_name:
+        exp_config['name'] = f"{exp_name}_seed{random_seed}"
+    else:
+        exp_config['name'] = f"seed{random_seed}"
+    
     manager = ExperimentManager(config, **exp_config)
     print(f"\nExperiment: {manager.run_id}")
     print(f"Output dir: {manager.run_dir}")
@@ -338,6 +352,10 @@ def print_evolution_summary(engine):
 
 
 if __name__ == "__main__":
-    # Allow config file to be passed as command-line argument
-    config_file = sys.argv[1] if len(sys.argv) > 1 else "config.yaml"
-    main(config_path=config_file)
+    parser = argparse.ArgumentParser(description='Run FlappyBird evolution')
+    parser.add_argument('config', nargs='?', default='config.yaml',
+                       help='Path to YAML configuration file (default: config.yaml)')
+    parser.add_argument('--seed', type=int, required=True,
+                       help='Random seed (required)')
+    args = parser.parse_args()
+    main(config_path=args.config, random_seed=args.seed)
