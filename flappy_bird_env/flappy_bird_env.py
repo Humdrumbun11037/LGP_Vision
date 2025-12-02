@@ -50,7 +50,6 @@ class FlappyBirdEnv(gym.Env):
 
         self._last_action = 0
         self._score = 0
-        self._pipe_just_passed = False
 
     @property
     def observation(self) -> ObsType:
@@ -59,7 +58,8 @@ class FlappyBirdEnv(gym.Env):
 
     @property
     def reward(self) -> SupportsFloat:
-        if self._pipe_just_passed:
+        if any([not pipe.passed and pipe.x < self._bird.x
+                for pipe in self._pipes]):
             return 1
         elif not self.terminated:
             return 0.001
@@ -147,7 +147,6 @@ class FlappyBirdEnv(gym.Env):
             self._bird.jump()
 
         add_pipe = False
-        self._pipe_just_passed = False
         self._bird.move()
 
         to_be_removed = []
@@ -158,7 +157,6 @@ class FlappyBirdEnv(gym.Env):
             if not pipe.passed and pipe.x < self._bird.x:
                 self._score += 1
                 pipe.passed = True
-                self._pipe_just_passed = True
                 add_pipe = True
 
             pipe.move()
@@ -171,8 +169,14 @@ class FlappyBirdEnv(gym.Env):
 
         self._base.move()
 
-        # Render must be called for both human and rgb_array modes
-        # to update the surface with the current game state
+        # BUG FIX: Render must be called for both human and rgb_array modes
+        # to update the surface with the current game state.
+        # 
+        # Previously, render() was only called for "human" mode, causing
+        # rgb_array observations to remain static across steps. Since the
+        # observation property reads directly from self._surface via
+        # pygame.surfarray.pixels3d(), the surface must be updated each step
+        # to reflect the current game state.
         if self.render_mode in ["human", "rgb_array"]:
             self.render()
 
@@ -234,7 +238,6 @@ class FlappyBirdEnv(gym.Env):
 
         self._last_action = 0
         self._score = 0
-        self._pipe_just_passed = False
 
         if self.render_mode is not None:
             self.render()
@@ -277,6 +280,11 @@ class FlappyBirdEnv(gym.Env):
                 self._surface = pygame.display.set_mode(self._shape)
             elif self.render_mode == "rgb_array":
                 self._surface = pygame.Surface(self._shape)
+                # BUG FIX: Previously, an early return statement here would
+                # return an empty observation on the first render() call.
+                # This caused the first observation after reset() to be blank.
+                # The return has been removed so the surface is drawn to before
+                # the observation is returned.
 
         assert self._surface is not None, \
             "Something went wrong with pygame. This should never happen."

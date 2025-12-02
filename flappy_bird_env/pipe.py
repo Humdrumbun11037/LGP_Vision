@@ -17,7 +17,7 @@ class Pipe(Drawable, Movable):
                             "images", "pipe.png")
         raw_image = pygame.image.load(path)
         self.pipe_image = pygame.transform.scale2x(raw_image)
-        self.gap = 200
+        self.gap = 200 # RMB TO CHANGE THIS 
         self.velocity = 5
 
         self.height = 0

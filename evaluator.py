@@ -860,6 +860,130 @@ class FlappyBirdEvaluator(FitnessEvaluator):
         return float(total_reward)
 
 
+@dataclass
+class FlappyBirdSimpleEvaluatorConfig(BaseEvaluatorConfig):
+    """Configuration for FlappyBird evaluator with 12-feature vector observations."""
+    env_id: str = "FlappyBird-v0"
+    max_steps: int = 1000
+    output_register: int = 0
+    render_mode: Optional[str] = None
+    use_lidar: bool = False  # Use 12-feature vector instead of LIDAR
+
+
+class FlappyBirdSimpleEvaluator(FitnessEvaluator):
+    """
+    Evaluate a policy on FlappyBird using 12-feature vector scalar observations.
+    
+    Uses flappy-bird-gymnasium with use_lidar=False to get 12 scalar features:
+    - last pipe's horizontal position
+    - last top pipe's vertical position
+    - last bottom pipe's vertical position
+    - next pipe's horizontal position
+    - next top pipe's vertical position
+    - next bottom pipe's vertical position
+    - next next pipe's horizontal position
+    - next next top pipe's vertical position
+    - next next bottom pipe's vertical position
+    - player's vertical position
+    - player's vertical velocity
+    - player's rotation
+    
+    Assumptions:
+        - Observation registers store the 12 scalar features
+        - Working scalars include register `output_register` which encodes the action
+        - The program writes to the designated output register after execution
+    """
+    
+    def __init__(
+        self,
+        config: FlappyBirdSimpleEvaluatorConfig,
+    ) -> None:
+        try:
+            import flappy_bird_gymnasium
+        except ImportError:
+            raise ImportError(
+                "flappy-bird-gymnasium is required for FlappyBirdSimpleEvaluator. "
+                "Install it with: pip install flappy-bird-gymnasium"
+            )
+        
+        if gym is None:
+            raise ImportError("gymnasium is required for FlappyBirdSimpleEvaluator")
+        
+        self.config = config
+        
+        # CRITICAL: Set output_registers if not provided in config
+        if config.output_registers is None:
+            from memory_system import MemoryType
+            config.output_registers = [(MemoryType.SCALAR, config.output_register)]
+        
+        super().__init__(config)
+        
+        # Create environment with use_lidar=False for 12-feature vector
+        self.env = gym.make(
+            config.env_id,
+            render_mode=config.render_mode,
+            use_lidar=config.use_lidar
+        )
+        self.max_steps = config.max_steps
+        self.output_register = config.output_register
+        self.env_id = config.env_id
+        self.render_mode = config.render_mode
+        self.use_lidar = config.use_lidar
+    
+    def close(self) -> None:
+        if hasattr(self, "env") and self.env is not None:
+            self.env.close()
+    
+    def __del__(self) -> None:  # pragma: no cover
+        self.close()
+    
+    def _evaluate_episode(self, individual: 'Individual', episode_idx: int) -> float:
+        # Use fixed seed for deterministic evaluation across all workers
+        if self.config.rng_seed is not None:
+            # Add episode_idx to the seed to ensure each episode is different
+            # but still deterministic
+            current_seed = self.config.rng_seed + episode_idx
+            observation, _ = self.env.reset(seed=current_seed)
+        else:
+            observation, _ = self.env.reset()
+        observation = np.asarray(observation, dtype=np.float32)
+        
+        memory = individual.memory.copy()
+        total_reward = 0.0
+        
+        # The observation is a 12-element feature vector
+        obs_size = len(observation)
+        
+        for _ in range(self.max_steps):
+            # Load observation as scalars, vector, and matrix (tiled)
+            # Similar to CartPole but with 12 features instead of 4
+            obs_matrix = np.tile(observation, (obs_size, 1))
+            
+            memory.load_observation({
+                'scalar': observation.tolist(),          # 12 scalars
+                'vector': [observation.tolist()],       # 1 vector of size 12
+                'matrix': [obs_matrix]                   # 1 matrix of size 12x12
+            })
+            
+            individual.program.execute(memory)
+            
+            # Read action from output register
+            action_value = memory.read_scalar(self.output_register)
+            
+            # Use sigmoid to normalize action value, then threshold at 0.5
+            from scipy.special import expit
+            normalized = expit(action_value)  # expit is the sigmoid function
+            action = 1 if normalized >= 0.5 else 0
+            
+            observation, reward, terminated, truncated, _ = self.env.step(action)
+            observation = np.asarray(observation, dtype=np.float32)
+            total_reward += reward
+            
+            if terminated or truncated:
+                break
+        
+        return float(total_reward)
+
 
 if __name__ == "__main__":
     from memory_system import MemoryConfig, MemoryBank

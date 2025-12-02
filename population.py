@@ -43,7 +43,8 @@ def _evaluate_worker(args: Tuple[int, Individual, type, dict]) -> Tuple[int, flo
         CartPoleEvaluatorConfig, 
         AcrobotEvaluatorConfig,
         PendulumEvaluatorConfig,
-        FlappyBirdEvaluatorConfig
+        FlappyBirdEvaluatorConfig,
+        FlappyBirdSimpleEvaluatorConfig
     )
     
     try:
@@ -51,6 +52,10 @@ def _evaluate_worker(args: Tuple[int, Individual, type, dict]) -> Tuple[int, flo
         if EvaluatorClass.__name__ == 'FlappyBirdEvaluator':
             # Create config object for FlappyBirdEvaluator with unique seed
             config = FlappyBirdEvaluatorConfig(**evaluator_kwargs)
+            worker_evaluator = EvaluatorClass(config=config)
+        elif EvaluatorClass.__name__ == 'FlappyBirdSimpleEvaluator':
+            # Create config object for FlappyBirdSimpleEvaluator with unique seed
+            config = FlappyBirdSimpleEvaluatorConfig(**evaluator_kwargs)
             worker_evaluator = EvaluatorClass(config=config)
         elif EvaluatorClass.__name__ == 'CartPoleEvaluator':
             # Create config object for CartPoleEvaluator with unique seed

@@ -266,9 +266,12 @@ class Instruction:
                 elif obs_reg_type == MemoryType.MATRIX:
                     resolved_reg = safe_mod(obs_reg_idx, memory_config.n_obs_matrix)
                     if src_type == MemoryType.SCALAR:
+                        # Wrap flat index and compute row/col
                         flat_idx = elem_idx % (h * w) if h * w > 0 else 0
-                        row, col = flat_idx // w, flat_idx % w if w > 0 else 0
-                        src_parts.append(f"obs_matrix[{obs_reg_idx}→{resolved_reg}][{row},{col}]")
+                        row = flat_idx // w if w > 0 else 0
+                        col = flat_idx % w if w > 0 else 0
+                        # Show both original flat index and wrapped row/col for clarity
+                        src_parts.append(f"obs_matrix[{obs_reg_idx}→{resolved_reg}][{elem_idx}→({row},{col})]")
                     elif src_type == MemoryType.VECTOR:
                         resolved_col = safe_mod(elem_idx, w)
                         src_parts.append(f"obs_matrix[{obs_reg_idx}→{resolved_reg}][:,{elem_idx}→{resolved_col}]")

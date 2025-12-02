@@ -116,7 +116,7 @@ def create_evaluator_config(config: Dict[str, Any]) -> FlappyBirdEvaluatorConfig
         n_jobs = None
     
     # Always use random_seed from global config for rng_seed (syncs with command-line seed)
-    rng_seed = config.get('random_seed')
+        rng_seed = config.get('random_seed')
     
     # Get output_register and set output_registers if not explicitly provided
     output_register = eval_cfg.get('output_register', 0)
