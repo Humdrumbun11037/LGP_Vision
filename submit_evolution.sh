@@ -5,7 +5,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=64
 #SBATCH --mem-per-cpu=512M
-#SBATCH --time=00:30:00
+#SBATCH --time=02:30:00
 #SBATCH --output=evolution_%j.out
 #SBATCH --error=evolution_%j.err
 #SBATCH --mail-user=hillroyx@mcmaster.ca
