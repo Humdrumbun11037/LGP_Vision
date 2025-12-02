@@ -171,7 +171,9 @@ class FlappyBirdEnv(gym.Env):
 
         self._base.move()
 
-        if self.render_mode == "human":
+        # Render must be called for both human and rgb_array modes
+        # to update the surface with the current game state
+        if self.render_mode in ["human", "rgb_array"]:
             self.render()
 
         return self.observation, self.reward, self.terminated, \

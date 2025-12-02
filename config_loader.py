@@ -138,6 +138,23 @@ def create_evaluator_config(config: Dict[str, Any]) -> FlappyBirdEvaluatorConfig
         normalize=eval_cfg.get('normalize', True),
         quantization_factor=eval_cfg.get('quantization_factor', 0.5),
         feature_vector_size=eval_cfg.get('feature_vector_size', 64),
+        frame_stack_size=eval_cfg.get('frame_stack_size', 1),
+        # Trinary strategy parameters
+        trinary_crop_bottom=eval_cfg.get('trinary_crop_bottom', 100),
+        trinary_resize_factor=eval_cfg.get('trinary_resize_factor', 0.03),
+        trinary_final_size=eval_cfg.get('trinary_final_size', 21),
+        trinary_bird_h_min=eval_cfg.get('trinary_bird_h_min', 0),
+        trinary_bird_h_max=eval_cfg.get('trinary_bird_h_max', 50),
+        trinary_bird_s_min=eval_cfg.get('trinary_bird_s_min', 50),
+        trinary_bird_s_max=eval_cfg.get('trinary_bird_s_max', 255),
+        trinary_bird_v_min=eval_cfg.get('trinary_bird_v_min', 50),
+        trinary_bird_v_max=eval_cfg.get('trinary_bird_v_max', 255),
+        trinary_pipe_h_min=eval_cfg.get('trinary_pipe_h_min', 35),
+        trinary_pipe_h_max=eval_cfg.get('trinary_pipe_h_max', 45),
+        trinary_pipe_s_min=eval_cfg.get('trinary_pipe_s_min', 40),
+        trinary_pipe_s_max=eval_cfg.get('trinary_pipe_s_max', 255),
+        trinary_pipe_v_min=eval_cfg.get('trinary_pipe_v_min', 40),
+        trinary_pipe_v_max=eval_cfg.get('trinary_pipe_v_max', 255),
         n_jobs=n_jobs,
         output_registers=output_registers,  # Set output_registers explicitly
     )

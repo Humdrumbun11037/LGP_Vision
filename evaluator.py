@@ -68,11 +68,29 @@ class FlappyBirdEvaluatorConfig(BaseEvaluatorConfig):
     max_steps: int = 1000
     output_register: int = 0
     render_mode: Optional[str] = "rgb_array"
-    patch_strategy: str = "quantized"  # "full_image", "quantized", or "feature_vector"
+    patch_strategy: str = "quantized"  # "full_image", "quantized", "feature_vector", or "trinary"
     color_channel: int = 1  # 0=R, 1=G, 2=B, or -1 for grayscale
     normalize: bool = True
     quantization_factor: float = 0.5
-    feature_vector_size: int = 256  
+    feature_vector_size: int = 256
+    frame_stack_size: int = 1  # Number of frames to stack for quantized/trinary strategy (1 = no stacking)
+    
+    # Trinary strategy parameters
+    trinary_crop_bottom: int = 100  # Pixels to crop from bottom
+    trinary_resize_factor: float = 0.03  # Resize factor before stretching
+    trinary_final_size: int = 21  # Final mask size (21x21)
+    trinary_bird_h_min: int = 0  # Bird HSV hue minimum
+    trinary_bird_h_max: int = 50  # Bird HSV hue maximum
+    trinary_bird_s_min: int = 50  # Bird HSV saturation minimum
+    trinary_bird_s_max: int = 255  # Bird HSV saturation maximum
+    trinary_bird_v_min: int = 50  # Bird HSV value minimum
+    trinary_bird_v_max: int = 255  # Bird HSV value maximum
+    trinary_pipe_h_min: int = 35  # Pipe HSV hue minimum
+    trinary_pipe_h_max: int = 45  # Pipe HSV hue maximum
+    trinary_pipe_s_min: int = 40  # Pipe HSV saturation minimum
+    trinary_pipe_s_max: int = 255  # Pipe HSV saturation maximum
+    trinary_pipe_v_min: int = 40  # Pipe HSV value minimum
+    trinary_pipe_v_max: int = 255  # Pipe HSV value maximum  
 
 
 class FitnessEvaluator(ABC):
@@ -395,10 +413,16 @@ class FlappyBirdEvaluator(FitnessEvaluator):
        
         
         # Validate patch_strategy
-        if config.patch_strategy not in ["full_image", "quantized", "feature_vector"]:
+        if config.patch_strategy not in ["full_image", "quantized", "feature_vector", "trinary"]:
             raise ValueError(
                 f"Unknown patch_strategy: {config.patch_strategy}. "
-                f"Must be 'full_image', 'quantized', or 'feature_vector'"
+                f"Must be 'full_image', 'quantized', 'feature_vector', or 'trinary'"
+            )
+        
+        # Validate frame_stack_size
+        if config.frame_stack_size < 1:
+            raise ValueError(
+                f"frame_stack_size must be >= 1, got {config.frame_stack_size}"
             )
         
         # Validate feature_vector strategy requirements
@@ -407,6 +431,16 @@ class FlappyBirdEvaluator(FitnessEvaluator):
                 raise ImportError(
                     "MobileNetV2FeatureExtractor is required for 'feature_vector' strategy. "
                     "Install PyTorch and torchvision: pip install torch torchvision"
+                )
+        
+        # Validate trinary strategy requirements
+        if config.patch_strategy == "trinary":
+            try:
+                import cv2  # noqa
+            except ImportError:
+                raise ImportError(
+                    "OpenCV (cv2) is required for 'trinary' strategy. "
+                    "Install OpenCV: pip install opencv-python"
                 )
         
         self.config = config
@@ -431,6 +465,27 @@ class FlappyBirdEvaluator(FitnessEvaluator):
         self.normalize = config.normalize
         self.quantization_factor = config.quantization_factor
         self.feature_vector_size = config.feature_vector_size
+        self.frame_stack_size = config.frame_stack_size
+        
+        # Trinary strategy configuration
+        self.trinary_crop_bottom = config.trinary_crop_bottom
+        self.trinary_resize_factor = config.trinary_resize_factor
+        self.trinary_final_size = config.trinary_final_size
+        self.trinary_bird_h_min = config.trinary_bird_h_min
+        self.trinary_bird_h_max = config.trinary_bird_h_max
+        self.trinary_bird_s_min = config.trinary_bird_s_min
+        self.trinary_bird_s_max = config.trinary_bird_s_max
+        self.trinary_bird_v_min = config.trinary_bird_v_min
+        self.trinary_bird_v_max = config.trinary_bird_v_max
+        self.trinary_pipe_h_min = config.trinary_pipe_h_min
+        self.trinary_pipe_h_max = config.trinary_pipe_h_max
+        self.trinary_pipe_s_min = config.trinary_pipe_s_min
+        self.trinary_pipe_s_max = config.trinary_pipe_s_max
+        self.trinary_pipe_v_min = config.trinary_pipe_v_min
+        self.trinary_pipe_v_max = config.trinary_pipe_v_max
+        
+        # Initialize frame buffer for frame stacking (quantized and trinary strategies)
+        self.frame_buffer: Optional[List[np.ndarray]] = None
         
         # Initialize feature extractor if using feature_vector strategy
         if config.patch_strategy == "feature_vector":
@@ -603,6 +658,67 @@ class FlappyBirdEvaluator(FitnessEvaluator):
                 f"Must be 'full_image', 'quantized', or 'feature_vector'"
             )
 
+    def _extract_trinary_mask(self, image: np.ndarray) -> np.ndarray:
+        """
+        Extract trinary semantic mask from RGB image.
+        
+        Creates a semantic mask with values:
+        - -1.0 for bird pixels (HSV color range + white pixels)
+        - 0.0 for background pixels
+        - 1.0 for pipe pixels (HSV color range)
+        
+        Args:
+            image: RGB image (H, W, 3) with values 0-255
+            
+        Returns:
+            2D float32 array (final_size, final_size) with values -1, 0, or 1
+        """
+        import cv2
+        
+        # 1. Crop bottom pixels to remove ground
+        h, w = image.shape[:2]
+        cropped = image[:h-self.trinary_crop_bottom, :]
+        
+        # 2. Resize by factor (nearest neighbor to preserve discrete values)
+        if self.trinary_resize_factor != 1.0:
+            new_h = max(1, int(cropped.shape[0] * self.trinary_resize_factor))
+            new_w = max(1, int(cropped.shape[1] * self.trinary_resize_factor))
+            cropped = cv2.resize(cropped.astype(np.uint8), (new_w, new_h), 
+                                interpolation=cv2.INTER_NEAREST)
+        
+        # 3. Stretch to final_size (nearest neighbor to preserve discrete values)
+        cropped = cv2.resize(cropped.astype(np.uint8), 
+                            (self.trinary_final_size, self.trinary_final_size),
+                            interpolation=cv2.INTER_NEAREST)
+        
+        # 4. Convert RGB to HSV for better color segmentation
+        hsv = cv2.cvtColor(cropped.astype(np.uint8), cv2.COLOR_RGB2HSV)
+        
+        # 5. Initialize mask as background (0)
+        mask = np.zeros((self.trinary_final_size, self.trinary_final_size), dtype=np.float32)
+        
+        # 6. Bird detection (HSV range + white pixels)
+        bird_lower = np.array([self.trinary_bird_h_min, self.trinary_bird_s_min, self.trinary_bird_v_min])
+        bird_upper = np.array([self.trinary_bird_h_max, self.trinary_bird_s_max, self.trinary_bird_v_max])
+        bird_mask = cv2.inRange(hsv, bird_lower, bird_upper)
+        
+        # Also detect white pixels (low saturation, high value) for bird's eye/white features
+        # White in HSV: S < 30, V > 200 (hardcoded as specified)
+        white_mask = cv2.inRange(hsv, np.array([0, 0, 200]), np.array([180, 30, 255]))
+        
+        # Combine bird color mask and white mask
+        bird_mask = cv2.bitwise_or(bird_mask, white_mask)
+        mask[bird_mask > 0] = -1.0
+        
+        # 7. Pipe detection (HSV range)
+        pipe_lower = np.array([self.trinary_pipe_h_min, self.trinary_pipe_s_min, self.trinary_pipe_v_min])
+        pipe_upper = np.array([self.trinary_pipe_h_max, self.trinary_pipe_s_max, self.trinary_pipe_v_max])
+        pipe_mask = cv2.inRange(hsv, pipe_lower, pipe_upper)
+        mask[pipe_mask > 0] = 1.0
+        
+        # Background is already 0 (default)
+        return mask
+
     def _process_observation(self, observation: np.ndarray) -> Union[Tuple[List[np.ndarray], str], dict]:
         """
         Process the raw RGB observation into observations for memory.
@@ -613,7 +729,7 @@ class FlappyBirdEvaluator(FitnessEvaluator):
             observation: RGB image array of shape (800, 576, 3) with values 0-255
             
         Returns:
-            For "full_image" and "quantized" strategies:
+            For "full_image", "quantized", and "trinary" strategies:
                 Tuple of (observations_list, 'matrix')
             For "feature_vector" strategy:
                 Dict with both 'vector' and 'matrix' keys, where:
@@ -636,12 +752,50 @@ class FlappyBirdEvaluator(FitnessEvaluator):
                 'vector': [feature_vector],
                 'matrix': [feature_matrix]
             }
+        elif self.patch_strategy == "trinary":
+            # Extract trinary mask from RGB observation (no color channel extraction needed)
+            current_frame_matrix = self._extract_trinary_mask(observation)
+            
+            # Handle frame stacking for trinary strategy (same logic as quantized)
+            if self.frame_stack_size > 1:
+                # Initialize or update frame buffer
+                if self.frame_buffer is None:
+                    # First frame: copy it N times
+                    self.frame_buffer = [current_frame_matrix.copy() for _ in range(self.frame_stack_size)]
+                else:
+                    # Sliding window: remove oldest, add newest
+                    self.frame_buffer.pop(0)
+                    self.frame_buffer.append(current_frame_matrix.copy())
+                
+                # Return list of stacked frames (deep copy to avoid modification)
+                stacked_frames = [frame.copy() for frame in self.frame_buffer]
+                return stacked_frames, 'matrix'
+            else:
+                # No frame stacking: return single matrix (backward compatible)
+                return [current_frame_matrix], 'matrix'
         else:
             # For full_image and quantized strategies, extract color channel first
             single_channel = self._extract_color_channel(observation)
             # Process image based on strategy (returns list with single matrix)
-            matrix_observations = self._extract_patches(single_channel)
-            return matrix_observations, 'matrix'
+            current_frame_matrix = self._extract_patches(single_channel)[0]  # Get the single matrix
+            
+            # Handle frame stacking for quantized strategy
+            if self.patch_strategy == "quantized" and self.frame_stack_size > 1:
+                # Initialize or update frame buffer
+                if self.frame_buffer is None:
+                    # First frame: copy it N times
+                    self.frame_buffer = [current_frame_matrix.copy() for _ in range(self.frame_stack_size)]
+                else:
+                    # Sliding window: remove oldest, add newest
+                    self.frame_buffer.pop(0)
+                    self.frame_buffer.append(current_frame_matrix.copy())
+                
+                # Return list of stacked frames (deep copy to avoid modification)
+                stacked_frames = [frame.copy() for frame in self.frame_buffer]
+                return stacked_frames, 'matrix'
+            else:
+                # No frame stacking: return single matrix (backward compatible)
+                return [current_frame_matrix], 'matrix'
 
     def _evaluate_episode(self, individual: 'Individual', episode_idx: int) -> float:
         # Use fixed seed for deterministic evaluation across all workers
@@ -654,8 +808,20 @@ class FlappyBirdEvaluator(FitnessEvaluator):
             observation, _ = self.env.reset()
         observation = np.asarray(observation, dtype=np.float32)
 
+        # Reset frame buffer for new episode
+        self.frame_buffer = None
+
         memory = individual.memory.copy()
         total_reward = 0.0
+        
+        # Validate frame stacking requirements
+        if self.frame_stack_size > 1 and self.patch_strategy in ["quantized", "trinary"]:
+            if memory.n_obs_matrix < self.frame_stack_size:
+                raise ValueError(
+                    f"Frame stacking requires n_obs_matrix >= frame_stack_size. "
+                    f"Got n_obs_matrix={memory.n_obs_matrix}, "
+                    f"frame_stack_size={self.frame_stack_size}"
+                )
 
         for _ in range(self.max_steps):
             # Process observation based on strategy

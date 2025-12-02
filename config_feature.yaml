@@ -28,11 +28,29 @@ evaluator:
   # Note: rng_seed automatically syncs with random_seed from command line
   
   # Image Processing Parameters
-  patch_strategy: "feature_vector"  # Strategy: "full_image", "quantized", or "feature_vector"
+  patch_strategy: "feature_vector"  # Strategy: "full_image", "quantized", "feature_vector", or "trinary"
   color_channel: 2           # Color channel: 0=R, 1=G, 2=B, -1=grayscale
   normalize: false             # Normalize pixel values to [0, 1]
   quantization_factor: 0.03   # Downsampling factor for quantized strategy
   feature_vector_size: 64    # Feature vector dimension for feature_vector strategy
+  frame_stack_size: 1        # Number of frames to stack for quantized/trinary strategy (1 = no stacking, requires n_obs_matrix >= frame_stack_size)
+  
+  # Trinary strategy parameters (only used when patch_strategy="trinary")
+  trinary_crop_bottom: 100    # Pixels to crop from bottom
+  trinary_resize_factor: 0.03  # Resize factor before stretching
+  trinary_final_size: 21      # Final mask size (21x21)
+  trinary_bird_h_min: 0       # Bird HSV hue minimum
+  trinary_bird_h_max: 50      # Bird HSV hue maximum
+  trinary_bird_s_min: 50      # Bird HSV saturation minimum
+  trinary_bird_s_max: 255     # Bird HSV saturation maximum
+  trinary_bird_v_min: 50      # Bird HSV value minimum
+  trinary_bird_v_max: 255     # Bird HSV value maximum
+  trinary_pipe_h_min: 35      # Pipe HSV hue minimum
+  trinary_pipe_h_max: 45      # Pipe HSV hue maximum
+  trinary_pipe_s_min: 40      # Pipe HSV saturation minimum
+  trinary_pipe_s_max: 255     # Pipe HSV saturation maximum
+  trinary_pipe_v_min: 40      # Pipe HSV value minimum
+  trinary_pipe_v_max: 255     # Pipe HSV value maximum
   
   # Parallelization
   n_jobs: 64  # Number of parallel workers (match SLURM --cpus-per-task)
