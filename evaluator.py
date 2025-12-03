@@ -75,6 +75,9 @@ class FlappyBirdEvaluatorConfig(BaseEvaluatorConfig):
     feature_vector_size: int = 256
     frame_stack_size: int = 1  # Number of frames to stack for quantized/trinary strategy (1 = no stacking)
     
+    # Quantized strategy parameters
+    quantized_final_size: int = 21  # Final matrix size (21x21) - must match memory matrix_shape
+    
     # Trinary strategy parameters
     trinary_crop_bottom: int = 100  # Pixels to crop from bottom
     trinary_resize_factor: float = 0.03  # Resize factor before stretching
@@ -467,6 +470,9 @@ class FlappyBirdEvaluator(FitnessEvaluator):
         self.feature_vector_size = config.feature_vector_size
         self.frame_stack_size = config.frame_stack_size
         
+        # Quantized strategy configuration
+        self.quantized_final_size = config.quantized_final_size
+        
         # Trinary strategy configuration
         self.trinary_crop_bottom = config.trinary_crop_bottom
         self.trinary_resize_factor = config.trinary_resize_factor
@@ -593,9 +599,9 @@ class FlappyBirdEvaluator(FitnessEvaluator):
 
         elif self.patch_strategy == "quantized":
             # Quantized strategy:
-            # 1. Trim bottom 50 rows (green channel only) -> 750 rows by 576 pixels
+            # 1. Trim bottom pixels (crop_bottom = 100)
             # 2. Quantize by quantization_factor
-            # 3. Stretch horizontally to create a square matrix
+            # 3. Stretch to quantized_final_size to match memory matrix_shape
             try:
                 import cv2
             except ImportError:
@@ -603,10 +609,10 @@ class FlappyBirdEvaluator(FitnessEvaluator):
             
             h, w = image.shape
             
-            # Step 1: Trim bottom 50 rows
-            # This gives us 750 rows by 576 pixels
-            crop_bottom = 50
-            trimmed = image[:h-crop_bottom, :]  # Shape: (750, 576)
+            # Step 1: Trim bottom pixels (crop_bottom = 100)
+            # Original height is 800, so trimmed height = 800 - 100 = 700
+            crop_bottom = 100
+            trimmed = image[:h-crop_bottom, :]  # Shape: (700, 576) after cropping
             
             # Step 2: Quantize by quantization_factor
             quantized_h = max(1, int(trimmed.shape[0] * self.quantization_factor))
@@ -627,9 +633,9 @@ class FlappyBirdEvaluator(FitnessEvaluator):
             )
             
           
-            # Step 3: Stretch horizontally to create a square matrix
-            # The final height is quantized_h, so we stretch width to match
-            final_size = quantized_h  # Square matrix: height = width
+            # Step 3: Stretch to final_size to match memory matrix_shape
+            # Use quantized_final_size from config to ensure it matches memory.matrix_shape
+            final_size = self.quantized_final_size
             squared_uint8 = cv2.resize(
                 quantized_uint8,
                 (final_size, final_size),
@@ -701,20 +707,60 @@ class FlappyBirdEvaluator(FitnessEvaluator):
         bird_lower = np.array([self.trinary_bird_h_min, self.trinary_bird_s_min, self.trinary_bird_v_min])
         bird_upper = np.array([self.trinary_bird_h_max, self.trinary_bird_s_max, self.trinary_bird_v_max])
         bird_mask = cv2.inRange(hsv, bird_lower, bird_upper)
+        rgb = cropped.astype(np.float32)
+        r, g, b = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
+
+        # Pure white criteria:
+        # 1. All channels must be bright (>= 240)
+        # 2. Channels must be similar (max - min <= 15) to exclude colored bright pixels
+        white_mask = (
+            (r >= 240) & (g >= 240) & (b >= 240) &  # All channels bright
+            (np.abs(r - g) <= 15) &  # R and G similar
+            (np.abs(g - b) <= 15) &  # G and B similar
+            (np.abs(r - b) <= 15)    # R and B similar
+        ).astype(np.uint8) * 255
+
         
-        # Also detect white pixels (low saturation, high value) for bird's eye/white features
-        # White in HSV: S < 30, V > 200 (hardcoded as specified)
-        white_mask = cv2.inRange(hsv, np.array([0, 0, 200]), np.array([180, 30, 255]))
-        
-        # Combine bird color mask and white mask
+        # # Combine bird color mask and white mask
         bird_mask = cv2.bitwise_or(bird_mask, white_mask)
         mask[bird_mask > 0] = -1.0
+        #  # Expand bird pixels vertically: set pixels above and below each bird pixel to -1
+        # # This creates a 3-pixel tall vertical stack for each bird pixel
+        # bird_positions = (mask == -1.0)
+
+        # # Expand upward: if bird is at row r, set row r-1 to -1 (handles edges automatically)
+        # # mask[:-1, :] excludes last row, so we can safely write to rows 0 to height-2
+        # # bird_positions[1:, :] checks for birds in rows 1 to end
+        # mask[:-1, :] = np.where(bird_positions[1:, :], -1.0, mask[:-1, :])
+
+        # # Expand downward: if bird is at row r, set row r+1 to -1 (handles edges automatically)
+        # # mask[1:, :] excludes first row, so we can safely write to rows 1 to height-1
+        # # bird_positions[:-1, :] checks for birds in rows 0 to height-2
+        # mask[1:, :] = np.where(bird_positions[:-1, :], -1.0, mask[1:, :])
+        
         
         # 7. Pipe detection (HSV range)
         pipe_lower = np.array([self.trinary_pipe_h_min, self.trinary_pipe_s_min, self.trinary_pipe_v_min])
         pipe_upper = np.array([self.trinary_pipe_h_max, self.trinary_pipe_s_max, self.trinary_pipe_v_max])
         pipe_mask = cv2.inRange(hsv, pipe_lower, pipe_upper)
         mask[pipe_mask > 0] = 1.0
+
+        # NOW expand bird pixels vertically, but preserve pipe pixels (only expand into background)
+        bird_positions = (mask == -1.0)
+
+        # Expand upward: only if target is background (0)
+        mask[:-1, :] = np.where(
+            bird_positions[1:, :] & (mask[:-1, :] == 0.0),
+            -1.0,
+            mask[:-1, :]
+        )
+
+        # Expand downward: only if target is background (0)
+        mask[1:, :] = np.where(
+            bird_positions[:-1, :] & (mask[1:, :] == 0.0),
+            -1.0,
+            mask[1:, :]
+)
         
         # Background is already 0 (default)
         return mask

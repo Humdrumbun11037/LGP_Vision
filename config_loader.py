@@ -116,7 +116,7 @@ def create_evaluator_config(config: Dict[str, Any]) -> FlappyBirdEvaluatorConfig
         n_jobs = None
     
     # Always use random_seed from global config for rng_seed (syncs with command-line seed)
-        rng_seed = config.get('random_seed')
+    rng_seed = config.get('random_seed')
     
     # Get output_register and set output_registers if not explicitly provided
     output_register = eval_cfg.get('output_register', 0)
@@ -139,6 +139,8 @@ def create_evaluator_config(config: Dict[str, Any]) -> FlappyBirdEvaluatorConfig
         quantization_factor=eval_cfg.get('quantization_factor', 0.5),
         feature_vector_size=eval_cfg.get('feature_vector_size', 64),
         frame_stack_size=eval_cfg.get('frame_stack_size', 1),
+        # Quantized strategy parameters
+        quantized_final_size=eval_cfg.get('quantized_final_size', 21),
         # Trinary strategy parameters
         trinary_crop_bottom=eval_cfg.get('trinary_crop_bottom', 100),
         trinary_resize_factor=eval_cfg.get('trinary_resize_factor', 0.03),

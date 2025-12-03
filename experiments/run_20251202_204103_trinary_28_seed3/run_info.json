@@ -1,0 +1,24 @@
+{
+  "run_id": "run_20251202_204103_trinary_28_seed3",
+  "start_time": "2025-12-02T20:41:03.588246",
+  "end_time": null,
+  "status": "running",
+  "config_summary": {
+    "random_seed": 3,
+    "population_size": 500,
+    "program_length": [
+      10,
+      100
+    ],
+    "elitism": 100,
+    "max_generations": 500,
+    "mutation_threshold": 0.9,
+    "crossover_threshold": 0.9,
+    "patch_strategy": "quantized",
+    "episodes": 5,
+    "max_steps": 500,
+    "n_jobs": 64,
+    "operation_set": "minimal"
+  },
+  "results": null
+}

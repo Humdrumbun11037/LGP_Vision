@@ -12,7 +12,7 @@ memory:
   n_matrix: 8          # Number of working matrix registers
   n_obs_scalar: 0      # Number of scalar observation registers
   n_obs_vector: 0      # Stores the 1D feature vector (64 elements)
-  n_obs_matrix: 4      # Stores the tiled feature matrix (64×64)
+  n_obs_matrix: 2     # Stores the tiled feature matrix (64×64)
   vector_size: 21      # MUST match feature_vector_size!
   matrix_shape: [21, 21]  # MUST match [feature_vector_size, feature_vector_size]!
 
@@ -28,12 +28,13 @@ evaluator:
   # Note: rng_seed automatically syncs with random_seed from command line
   
   # Image Processing Parameters
-  patch_strategy: "feature_vector"  # Strategy: "full_image", "quantized", "feature_vector", or "trinary"
+  patch_strategy: "quantized"  # Strategy: "full_image", "quantized", "feature_vector", or "trinary"
   color_channel: 2           # Color channel: 0=R, 1=G, 2=B, -1=grayscale
   normalize: false             # Normalize pixel values to [0, 1]
   quantization_factor: 0.03   # Downsampling factor for quantized strategy
+  quantized_final_size: 21     # Final matrix size (21x21) - must match memory matrix_shape
   feature_vector_size: 64    # Feature vector dimension for feature_vector strategy
-  frame_stack_size: 4        # Number of frames to stack for quantized/trinary strategy (1 = no stacking, requires n_obs_matrix >= frame_stack_size)
+  frame_stack_size: 2        # Number of frames to stack for quantized/trinary strategy (1 = no stacking, requires n_obs_matrix >= frame_stack_size)
   
   # Trinary strategy parameters (only used when patch_strategy="trinary")
   trinary_crop_bottom: 100    # Pixels to crop from bottom
@@ -53,20 +54,20 @@ evaluator:
   trinary_pipe_v_max: 255     # Pipe HSV value maximum
   
   # Parallelization
-  n_jobs: 64  # Number of parallel workers (match SLURM --cpus-per-task)
+  n_jobs: 8 # Number of parallel workers (match SLURM --cpus-per-task)
 
 # Population Configuration
 # Settings for the evolutionary population
 population:
   size: 500                 # Population size
-  program_length: [10, 100]     # Program length range [min, max]
-  elitism: 100               # Number of elite individuals to preserve
-  max_program_length: null     # Maximum program length (null for no limit)
+  program_length: [1, 10]     # Program length range [min, max]
+  elitism: 50               # Number of elite individuals to preserve
+  max_program_length: 64     # Maximum program length (null for no limit)
 
 # Evolution Configuration
 # Settings for the evolutionary algorithm
 evolution:
-  max_generations: 500        # Maximum number of generations
+  max_generations: 1000        # Maximum number of generations
   mutation_threshold: 0.9     # Probability threshold for mutation (0.0-1.0)
   constant_mutation_rate: 0.1 # Probability of mutating constants (0.0-1.0)
   crossover_threshold: 0.9     # Probability threshold for crossover (0.0-1.0)
@@ -87,7 +88,7 @@ operations:
 # Experiment Configuration
 # Unified output management - all outputs go under experiments/<run_id>/
 experiment:
-  name: "trinary_28"                    # Custom name suffix for run ID (null = timestamp only)
-  base_dir: "experiments"       # Base directory for all experiment runs
+  name: "quantized_frame_stack_2_1000"                    # Custom name suffix for run ID (null = timestamp only)
+  base_dir: "experiments/quantized_fr"       # Base directory for all experiment runs
   checkpoint_every: null          # Save checkpoint every N generations (null = only on improvement)
   keep_n_checkpoints: null      # Keep last N checkpoints (null = keep all)
