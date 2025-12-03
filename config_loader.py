@@ -139,6 +139,7 @@ def create_evaluator_config(config: Dict[str, Any]) -> FlappyBirdEvaluatorConfig
         quantization_factor=eval_cfg.get('quantization_factor', 0.5),
         feature_vector_size=eval_cfg.get('feature_vector_size', 64),
         frame_stack_size=eval_cfg.get('frame_stack_size', 1),
+        action_repeat=eval_cfg.get('action_repeat', 1),
         # Quantized strategy parameters
         quantized_final_size=eval_cfg.get('quantized_final_size', 21),
         # Trinary strategy parameters

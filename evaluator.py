@@ -74,6 +74,7 @@ class FlappyBirdEvaluatorConfig(BaseEvaluatorConfig):
     quantization_factor: float = 0.5
     feature_vector_size: int = 256
     frame_stack_size: int = 1  # Number of frames to stack for quantized/trinary strategy (1 = no stacking)
+    action_repeat: int = 1  # Number of frames to repeat each action (1 = decision every frame, 5 = decision every 5 frames)
     
     # Quantized strategy parameters
     quantized_final_size: int = 21  # Final matrix size (21x21) - must match memory matrix_shape
@@ -469,6 +470,7 @@ class FlappyBirdEvaluator(FitnessEvaluator):
         self.quantization_factor = config.quantization_factor
         self.feature_vector_size = config.feature_vector_size
         self.frame_stack_size = config.frame_stack_size
+        self.action_repeat = config.action_repeat
         
         # Quantized strategy configuration
         self.quantized_final_size = config.quantized_final_size
@@ -869,32 +871,34 @@ class FlappyBirdEvaluator(FitnessEvaluator):
                     f"frame_stack_size={self.frame_stack_size}"
                 )
 
-        for _ in range(self.max_steps):
-            # Process observation based on strategy
-            processed = self._process_observation(observation)
-            
-            # Load observations into memory based on return type
-            if isinstance(processed, dict):
-                # feature_vector strategy returns dict with both 'vector' and 'matrix'
-                memory.load_observation(processed)
+        for step in range(self.max_steps):
+            # Only make a decision every action_repeat frames (e.g., every 5 frames)
+            if step % self.action_repeat == 0:
+                # Process observation based on strategy
+                processed = self._process_observation(observation)
+                
+                # Load observations into memory based on return type
+                if isinstance(processed, dict):
+                    # feature_vector strategy returns dict with both 'vector' and 'matrix'
+                    memory.load_observation(processed)
+                else:
+                    # full_image/quantized strategies return (observations_list, obs_type) tuple
+                    processed_observations, obs_type = processed
+                    if obs_type == 'vector':
+                        memory.load_observation({'vector': processed_observations})
+                    else:  # obs_type == 'matrix'
+                        memory.load_observation({'matrix': processed_observations})
+
+                # Execute program to get new action
+                individual.program.execute(memory)
+
+                # Read action from output register
+                action_value = memory.read_scalar(self.output_register)
+                normalized = expit(action_value)  # expit is the sigmoid function   
+                action = 1 if normalized >= 0.5 else 0
             else:
-                # full_image/quantized strategies return (observations_list, obs_type) tuple
-                processed_observations, obs_type = processed
-                if obs_type == 'vector':
-                    memory.load_observation({'vector': processed_observations})
-                else:  # obs_type == 'matrix'
-                    memory.load_observation({'matrix': processed_observations})
-
-            # individual.get_effective_program(self.output_registers).execute(memory)
-            individual.program.execute(memory)
-
-
-            # Read action from output register
-            action_value = memory.read_scalar(self.output_register)
-            
-            normalized = expit(action_value)  # expit is the sigmoid function   
-            
-            action = 1 if normalized >= 0.5 else 0
+                # Use NOOP (action 0) for frames between decisions
+                action = 0
 
             observation, reward, terminated, truncated, _ = self.env.step(action)
             observation = np.asarray(observation, dtype=np.float32)
