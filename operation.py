@@ -2458,14 +2458,26 @@ class CVSobelXOp(Operation):
         # Ensure odd kernel size
         ksize = _ensure_odd_kernel_size(kernel_size)
         ksize = min(ksize, 31)  # OpenCV limit
+        # Ensure kernel doesn't exceed image dimensions
+        min_dim = min(m.shape[0], m.shape[1])
+        ksize = min(ksize, min_dim if min_dim % 2 == 1 else min_dim - 1)
         
         # Apply Sobel X (vertical edges)
         sobel_x = cv2.Sobel(img_uint8, cv2.CV_64F, 1, 0, ksize=ksize)
         
-        # Convert back to float32 and normalize
+        # Convert back to float32 and normalize using fixed constant
+        # This preserves magnitude information across frames (critical for RL)
+        # Max theoretical gradient for Sobel: ksize=1 -> ~510, ksize=3 -> ~1020, larger kernels scale up
         result = np.abs(sobel_x).astype(np.float32)
-        if result.max() > 0:
-            result = result / result.max()
+        # Use conservative fixed normalization based on kernel size
+        if ksize == 1:
+            max_possible_gradient = 510.0  # Simple derivative: 2 * 255
+        elif ksize == 3:
+            max_possible_gradient = 1020.0  # Standard Sobel: 4 * 255
+        else:
+            # Conservative estimate for larger kernels
+            max_possible_gradient = ksize * 255.0
+        result = np.clip(result / max_possible_gradient, 0.0, 1.0)
         return result
     
     @property
@@ -2496,14 +2508,26 @@ class CVSobelYOp(Operation):
         # Ensure odd kernel size
         ksize = _ensure_odd_kernel_size(kernel_size)
         ksize = min(ksize, 31)  # OpenCV limit
+        # Ensure kernel doesn't exceed image dimensions
+        min_dim = min(m.shape[0], m.shape[1])
+        ksize = min(ksize, min_dim if min_dim % 2 == 1 else min_dim - 1)
         
         # Apply Sobel Y (horizontal edges)
         sobel_y = cv2.Sobel(img_uint8, cv2.CV_64F, 0, 1, ksize=ksize)
         
-        # Convert back to float32 and normalize
+        # Convert back to float32 and normalize using fixed constant
+        # This preserves magnitude information across frames (critical for RL)
+        # Max theoretical gradient for Sobel: ksize=1 -> ~510, ksize=3 -> ~1020, larger kernels scale up
         result = np.abs(sobel_y).astype(np.float32)
-        if result.max() > 0:
-            result = result / result.max()
+        # Use conservative fixed normalization based on kernel size
+        if ksize == 1:
+            max_possible_gradient = 510.0  # Simple derivative: 2 * 255
+        elif ksize == 3:
+            max_possible_gradient = 1020.0  # Standard Sobel: 4 * 255
+        else:
+            # Conservative estimate for larger kernels
+            max_possible_gradient = ksize * 255.0
+        result = np.clip(result / max_possible_gradient, 0.0, 1.0)
         return result
     
     @property
@@ -2577,6 +2601,9 @@ class CVGaussianBlurOp(Operation):
         # Ensure odd kernel size
         ksize = _ensure_odd_kernel_size(kernel_size)
         ksize = min(ksize, 31)  # OpenCV limit
+        # Ensure kernel doesn't exceed image dimensions
+        min_dim = min(m.shape[0], m.shape[1])
+        ksize = min(ksize, min_dim if min_dim % 2 == 1 else min_dim - 1)
         
         # Ensure positive sigma
         sigma_val = max(0.1, abs(float(sigma)))
@@ -3069,7 +3096,7 @@ class ScalarConditionalOp(Operation):
 
 # ==================== MINIMAL OPERATION SET FOR FLAPPYBIRD ====================
 # Carefully selected 28 operations for FlappyBird evolution
-# Balanced across types with essential cross-type operations
+# Balanced acrosfs types with essential cross-type operations
 
 FLAPPYBIRD_MINIMAL_OPS = [
     # SCALAR ARITHMETIC (9 ops) - Decision making

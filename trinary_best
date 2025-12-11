@@ -1,0 +1,66 @@
+================================================================================
+FULL PROGRAM
+================================================================================
+
+   0: scalar[5→5] = automl_scalar_add(scalar[3346→2], obs_matrix[1→1][1160→(13,5)])
+   1: matrix[3→3] = cv_max_pool(obs_matrix[1→1], scalar[5333→5])
+   2: scalar[2→2] = automl_scalar_add(scalar[6707→3], scalar[6666→2])
+   3: scalar[6→6] = automl_matrix_mean(obs_matrix[1→1])
+   4: matrix[2→2] = cv_sobel_x(matrix[1124→4], scalar[1080→0])
+   5: matrix[4→4] = cv_max_pool(obs_matrix[0→0], scalar[40→0])
+   6: matrix[3→3] = cv_gaussian_blur(matrix[1068→4], scalar[8385→1], obs_matrix[0→0][618→(8,9)])
+   7: scalar[7→7] = automl_scalar_cos(scalar[1840→0])
+   8: vector[5→5] = automl_vector_add(vector[6344→0], vector[5093→5])
+   9: matrix[5→5] = cv_sobel_y(matrix[4375→7], obs_matrix[0→0][6933→(15,3)])
+  10: scalar[4→4] = automl_vector_dot(vector[671→7], vector[1383→7])
+  11: matrix[4→4] = cv_gaussian_blur(obs_matrix[0→0], obs_matrix[0→0][5922→(9,0)], obs_matrix[0→0][6768→(7,6)])
+  12: matrix[2→2] = automl_matrix_sub(obs_matrix[0→0], matrix[9098→2])
+  13: scalar[2→2] = automl_scalar_mul(obs_matrix[1→1][2553→(16,12)], scalar[1519→7])
+  14: scalar[5→5] = automl_scalar_mul(scalar[238→6], obs_matrix[0→0][736→(14,1)])
+  15: scalar[4→4] = automl_vector_norm(obs_matrix[0→0][:,2937→18])
+  16: scalar[4→4] = automl_scalar_add(obs_matrix[0→0][8590→(10,1)], obs_matrix[0→0][4482→(3,9)])
+  17: scalar[2→2] = automl_scalar_add(scalar[6761→1], obs_matrix[0→0][7385→(15,14)])
+  18: matrix[7→7] = cv_sobel_x(matrix[8983→7], obs_matrix[0→0][623→(8,14)])
+  19: scalar[0→0] = automl_matrix_norm(matrix[2480→0])
+  20: scalar[7→7] = automl_vector_dot(obs_matrix[1→1][:,9738→15], obs_matrix[1→1][:,9542→8])
+  21: scalar[1→1] = automl_matrix_mean(matrix[1154→2]) 
+  22: scalar[0→0] = automl_scalar_sub(scalar[1898→2], obs_matrix[1→1][5219→(17,11)]) # E
+
+================================================================================
+Total: 23 instructions
+================================================================================
+
+
+================================================================================
+EFFECTIVE PROGRAM
+================================================================================
+
+  11: matrix[4] = cv_gaussian_blur(obs_matrix[0], obs_matrix[0][(9,0)], obs_matrix[0][(7,6)]) #E
+   4: matrix[2→2] = cv_sobel_x(matrix[1124→4], scalar[1080→0])
+  12: matrix[2] = automl_matrix_sub(obs_matrix[0], matrix[2]) # E
+   21: scalar[1→1] = automl_matrix_mean(matrix[2]) # E 
+  17: scalar[2→2] = automl_scalar_add(scalar[1], obs_matrix[0][(15,14)]) Previous frame - bottom middle
+  22: scalar[0→0] = automl_scalar_sub(scalar[2], obs_matrix[1][(17,11)]) # E obs matrix 1 is the current frame -subtracts bottom middle of frame - could sometimes be bird, pipe or background
+         # subs previous frame bottom middle to current 
+
+[[ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  1  1]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  1  1]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  1  1]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  1  1]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  1  1]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  1  1]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  1  1]
+ [ 0  0  0  0  0  0  0  0  0 -1 -1 -1  0  0  0  0  0  0  0  1  1]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  1  1]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  1  1]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  1  1]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  1  1]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  1  1]
+ [ 0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  1  1]]

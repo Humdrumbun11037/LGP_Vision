@@ -8,7 +8,7 @@
 #SBATCH --time=02:30:00
 #SBATCH --output=evolution_%j.out
 #SBATCH --error=evolution_%j.err
-#SBATCH --mail-user=hillroyx@mcmaster.ca
+#SBATCH --mail-user=slurm.xhillroy@gmail.com
 #SBATCH --mail-type=ALL
 
 # Change to the directory where sbatch was run from

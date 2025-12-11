@@ -671,15 +671,15 @@ class FlappyBirdEvaluator(FitnessEvaluator):
         Extract trinary semantic mask from RGB image.
         
         Creates a semantic mask with values:
-        - -1.0 for bird pixels (HSV color range + white pixels)
-        - 0.0 for background pixels
-        - 1.0 for pipe pixels (HSV color range)
+        - 1.0 for bird pixels (HSV color range + white pixels)
+        - 2.0 for background pixels
+        - 3.0 for pipe pixels (HSV color range)
         
         Args:
             image: RGB image (H, W, 3) with values 0-255
             
         Returns:
-            2D float32 array (final_size, final_size) with values -1, 0, or 1
+            2D float32 array (final_size, final_size) with values 1, 2, or 3
         """
         import cv2
         
@@ -702,8 +702,8 @@ class FlappyBirdEvaluator(FitnessEvaluator):
         # 4. Convert RGB to HSV for better color segmentation
         hsv = cv2.cvtColor(cropped.astype(np.uint8), cv2.COLOR_RGB2HSV)
         
-        # 5. Initialize mask as background (0)
-        mask = np.zeros((self.trinary_final_size, self.trinary_final_size), dtype=np.float32)
+        # 5. Initialize mask as background (2.0)
+        mask = np.full((self.trinary_final_size, self.trinary_final_size), 2.0, dtype=np.float32)
         
         # 6. Bird detection (HSV range + white pixels)
         bird_lower = np.array([self.trinary_bird_h_min, self.trinary_bird_s_min, self.trinary_bird_v_min])
@@ -725,7 +725,7 @@ class FlappyBirdEvaluator(FitnessEvaluator):
         
         # # Combine bird color mask and white mask
         bird_mask = cv2.bitwise_or(bird_mask, white_mask)
-        mask[bird_mask > 0] = -1.0
+        mask[bird_mask > 0] = 1.0
         #  # Expand bird pixels vertically: set pixels above and below each bird pixel to -1
         # # This creates a 3-pixel tall vertical stack for each bird pixel
         # bird_positions = (mask == -1.0)
@@ -745,26 +745,26 @@ class FlappyBirdEvaluator(FitnessEvaluator):
         pipe_lower = np.array([self.trinary_pipe_h_min, self.trinary_pipe_s_min, self.trinary_pipe_v_min])
         pipe_upper = np.array([self.trinary_pipe_h_max, self.trinary_pipe_s_max, self.trinary_pipe_v_max])
         pipe_mask = cv2.inRange(hsv, pipe_lower, pipe_upper)
-        mask[pipe_mask > 0] = 1.0
+        mask[pipe_mask > 0] = 3.0
 
         # NOW expand bird pixels vertically, but preserve pipe pixels (only expand into background)
-        bird_positions = (mask == -1.0)
+        bird_positions = (mask == 1.0)
 
-        # Expand upward: only if target is background (0)
+        # Expand upward: only if target is background (2.0)
         mask[:-1, :] = np.where(
-            bird_positions[1:, :] & (mask[:-1, :] == 0.0),
-            -1.0,
+            bird_positions[1:, :] & (mask[:-1, :] == 2.0),
+            1.0,
             mask[:-1, :]
         )
 
-        # Expand downward: only if target is background (0)
+        # Expand downward: only if target is background (2.0)
         mask[1:, :] = np.where(
-            bird_positions[:-1, :] & (mask[1:, :] == 0.0),
-            -1.0,
+            bird_positions[:-1, :] & (mask[1:, :] == 2.0),
+            1.0,
             mask[1:, :]
 )
         
-        # Background is already 0 (default)
+        # Background is already 2.0 (default)
         return mask
 
     def _process_observation(self, observation: np.ndarray) -> Union[Tuple[List[np.ndarray], str], dict]:

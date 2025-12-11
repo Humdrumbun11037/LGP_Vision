@@ -1,0 +1,65 @@
+  0: scalar[0→0] = automl_scalar_add(scalar[3386→2], obs_matrix[0→0][7383→(15,12)])
+   1: matrix[5→5] = automl_matrix_add(matrix[7546→2], matrix[4104→0])
+   2: scalar[0→0] = automl_scalar_heaviside(obs_matrix[0→0][9971→(12,17)])
+   3: scalar[2→2] = automl_vector_mean(obs_matrix[0→0][:,721→7])
+   4: scalar[4→4] = scalar_conditional(obs_matrix[0→0][6247→(3,10)], scalar[6428→4])
+   5: scalar[5→5] = automl_vector_norm(obs_matrix[0→0][:,3220→7])
+   6: scalar[4→4] = automl_scalar_add(obs_matrix[0→0][5603→(14,17)], scalar[4240→0])
+   7: scalar[4→4] = automl_vector_norm(obs_matrix[0→0][:,8136→9])
+   8: scalar[0→0] = automl_vector_mean(vector[4113→1])
+   9: scalar[5→5] = automl_scalar_mul(scalar[9549→5], obs_matrix[0→0][8986→(7,19)])
+  10: matrix[6→6] = automl_matrix_add(obs_matrix[0→0], matrix[2113→1])
+  11: scalar[7→7] = automl_vector_dot(obs_matrix[0→0][:,195→6], vector[9891→3])
+  12: scalar[6→6] = automl_scalar_heaviside(obs_matrix[0→0][471→(1,9)])
+  13: scalar[2→2] = automl_scalar_abs(obs_matrix[0→0][8751→(17,15)])
+  14: vector[1→1] = automl_vector_add(vector[3093→5], obs_matrix[0→0][:,5559→15])
+  15: vector[2→2] = automl_vector_add(vector[53→5], vector[2104→0])
+  16: scalar[4→4] = automl_vector_norm(obs_matrix[0→0][:,4273→10])
+  17: matrix[3→3] = cv_sobel_y(matrix[2758→6], scalar[5608→0])
+  18: vector[4→4] = automl_matrix_mean_axis0(obs_matrix[1→1])
+  19: matrix[4→4] = cv_sobel_x(matrix[9768→0], obs_matrix[1→1][3405→(15,3)])
+  20: vector[2→2] = automl_vector_sub(vector[3986→2], vector[3931→3])
+  21: scalar[7→7] = automl_vector_mean(obs_matrix[1→1][:,2508→9])
+  22: matrix[6→6] = cv_max_pool(matrix[2793→1], obs_matrix[0→0][6051→(15,3)])
+  23: scalar[6→6] = automl_scalar_abs(obs_matrix[1→1][4235→(12,14)])
+  24: matrix[7→7] = cv_sobel_y(matrix[7129→1], scalar[364→4])
+  25: scalar[3→3] = automl_scalar_sub(scalar[3973→5], scalar[950→6])
+  26: scalar[7→7] = automl_scalar_heaviside(scalar[5853→5])
+  27: scalar[5→5] = scalar_conditional(obs_matrix[1→1][7545→(2,6)], scalar[8299→3])
+  28: scalar[5→5] = automl_scalar_min(obs_matrix[1→1][7537→(1,19)], obs_matrix[0→0][2717→(3,8)])
+  29: scalar[6→6] = automl_scalar_max(scalar[1070→6], scalar[976→0])
+  30: scalar[7→7] = automl_scalar_arctan(scalar[2989→5])
+  31: vector[1→1] = automl_vector_sub(vector[2887→7], obs_matrix[0→0][:,8876→14])
+  32: scalar[4→4] = automl_vector_norm(vector[5808→0])
+  33: vector[6→6] = automl_matrix_mean_axis0(matrix[242→2])
+  34: scalar[3→3] = automl_scalar_abs(scalar[1294→6])
+  35: scalar[6→6] = automl_scalar_div(scalar[8567→7], scalar[9489→1])
+  36: scalar[0→0] = automl_scalar_add(obs_matrix[1→1][3796→(12,16)], obs_matrix[0→0][784→(16,7)])
+  37: matrix[2→2] = automl_matrix_sub(matrix[112→0], obs_matrix[0→0])
+  38: scalar[2→2] = automl_vector_dot(obs_matrix[0→0][:,1866→18], vector[4277→5])
+  39: scalar[0→0] = automl_vector_mean(vector[5531→3])
+  40: matrix[3→3] = cv_avg_pool(obs_matrix[0→0], scalar[3209→1])
+  41: scalar[5→5] = automl_matrix_norm(obs_matrix[1→1])
+  42: matrix[6→6] = cv_avg_pool(obs_matrix[1→1], obs_matrix[1→1][4742→(15,17)])
+  43: scalar[6→6] = automl_matrix_mean(matrix[9566→6])
+  44: scalar[7→7] = automl_vector_mean(vector[61→5])
+  45: scalar[1→1] = automl_scalar_heaviside(obs_matrix[0→0][1818→(2,12)])
+  46: matrix[5→5] = automl_matrix_sub(obs_matrix[1→1], matrix[1782→6])
+  47: scalar[6→6] = automl_scalar_heaviside(obs_matrix[0→0][9350→(4,5)])
+  48: scalar[2→2] = automl_scalar_sin(scalar[4290→2])
+  49: scalar[3→3] = automl_scalar_sin(obs_matrix[1→1][9607→(16,10)]) #E 
+  50: scalar[1→1] = automl_scalar_sub(obs_matrix[0→0][295→(14,1)], scalar[8086→6])
+  51: vector[5→5] = automl_vector_add(vector[7438→6], vector[2088→0])
+  52: scalar[0→0] = automl_scalar_div(obs_matrix[1→1][2268→(3,0)], scalar[875→3]) #E
+  53: scalar[0→0] = scalar_conditional(obs_matrix[1→1][7049→(20,14)], scalar[960→0]) #E 
+  54: matrix[7→7] = cv_max_pool(obs_matrix[0→0], obs_matrix[1→1][5838→(5,0)])
+  55: scalar[4→4] = automl_scalar_min(scalar[102→6], obs_matrix[1→1][8818→(20,19)])
+
+
+  effe
+Total: 55 instructions
+  49: scalar[3] = automl_scalar_sin(obs_matrix[1][(16,10)]) #E 
+  52: scalar[0] = automl_scalar_div(obs_matrix[1][3,0)], scalar[3]) #E
+  53: scalar[0] = scalar_conditional(obs_matrix[1][(20,14)], scalar[0]) #E 
+
+3/55
