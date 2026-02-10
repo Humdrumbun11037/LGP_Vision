@@ -4,8 +4,8 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=64
-#SBATCH --mem-per-cpu=512M
-#SBATCH --time=02:30:00
+#SBATCH --mem-per-cpu=2G
+#SBATCH --time=7-00:00:00
 #SBATCH --output=evolution_%j.out
 #SBATCH --error=evolution_%j.err
 #SBATCH --mail-user=slurm.xhillroy@gmail.com
