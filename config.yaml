@@ -7,9 +7,9 @@
 # Memory Configuration
 # Defines the memory structure for LGP programs
 memory:
-  n_scalar: 8          # Number of working scalar registers
-  n_vector: 8          # Number of working vector registers
-  n_matrix: 8          # Number of working matrix registers
+  n_scalar: 6         # Number of working scalar registers
+  n_vector: 8        # Number of working vector registers
+  n_matrix: 7          # Number of working matrix registers
   n_obs_scalar: 0      # Number of scalar observation registers
   n_obs_vector: 0      # Stores the 1D feature vector (64 elements)
   n_obs_matrix: 2     # Stores the tiled feature matrix (64×64)
@@ -20,12 +20,12 @@ memory:
 # Settings for the FlappyBird environment evaluator
 evaluator:
   env_id: "FlappyBird-v0"  # Gymnasium environment ID
-  episodes: 5           # Number of episodes per evaluation
+  episodes: 6          # Number of episodes per evaluation
   max_steps: 500           # Maximum steps per episode
   output_register: 0      # Scalar register to read action from
   action_repeat: 5        # Number of frames to repeat each action (1 = decision every frame, 5 = decision every 5 frames)
   headless: true            # Use headless mode (faster, no windows). If false, uses "human" rendering
-  render_mode: "rgb_array"        # Rendering mode: "human", "rgb_array", or null (auto-set by headless if null)
+  render_mode: "human"        # Rendering mode: "human", "rgb_array", or null (auto-set by headless if null)
   # Note: rng_seed automatically syncs with random_seed from command line
   
   # Image Processing Parameters
@@ -34,7 +34,7 @@ evaluator:
   normalize: false             # Normalize pixel values to [0, 1]
   quantization_factor: 0.03   # Downsampling factor for quantized strategy
   quantized_final_size: 21     # Final matrix size (21x21) - must match memory matrix_shape
-  feature_vector_size: 64    # Feature vector dimension for feature_vector strategy
+  feature_vector_size: 21    # Feature vector dimension for feature_vector strategy
   frame_stack_size: 2        # Number of frames to stack for quantized/trinary strategy (1 = no stacking, requires n_obs_matrix >= frame_stack_size)
   
   # Trinary strategy parameters (only used when patch_strategy="trinary")
@@ -60,18 +60,18 @@ evaluator:
 # Population Configuration
 # Settings for the evolutionary population
 population:
-  size: 5                 # Population size
-  program_length: [1, 10]     # Program length range [min, max]
-  elitism: 1               # Number of elite individuals to preserve
+  size: 15                 # Population size
+  program_length: [1, 15]     # Program length range [min, max]
+  elitism: 2               # Number of elite individuals to preserve
   max_program_length: 64     # Maximum program length (null for no limit)
 
 # Evolution Configuration
 # Settings for the evolutionary algorithm
 evolution:
-  max_generations: 2        # Maximum number of generations
-  mutation_threshold: 0.9     # Probability threshold for mutation (0.0-1.0)
+  max_generations: 120       # Maximum number of generations
+  mutation_threshold: 0.1     # Probability threshold for mutation (0.0-1.0)
   constant_mutation_rate: 0.1 # Probability of mutating constants (0.0-1.0)
-  crossover_threshold: 0.9     # Probability threshold for crossover (0.0-1.0)
+  crossover_threshold: 0.05     # Probability threshold for crossover (0.0-1.0)
   verbose: true               # Print detailed progress information
 
 # Operations Configuration
@@ -80,11 +80,11 @@ operations:
   use_feature_vector_ops: false  # 12 ops: 8 scalar + 4 vector (dot_product, mean, sum, norm)
                                 # Best for feature_vector strategy!
   use_minimal_scalar: false     # 8 scalar-only ops (simpler baseline)
-  use_minimal: true            # 28-op set (for quantized/full_image strategies)
+  use_minimal: false            # 28-op set (for quantized/full_image strategies)
   use_automl_no_random: false  # AutoML operations without constant/random/gaussian ops
                                 # (only if above are false, checked before use_automl)
-  use_automl: false              # Include AutoML operations (only if above are false)
-  use_cv: false                  # Include CV operations (only if above are false)
+  use_automl: true              # Include AutoML operations (only if above are false)
+  use_cv: true                  # Include CV operations (only if above are false)
 
 # Experiment Configuration
 # Unified output management - all outputs go under experiments/<run_id>/

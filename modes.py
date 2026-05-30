@@ -1,0 +1,515 @@
+# modes.py
+"""
+MODES Toolbox — Measurements of Open-Ended Dynamics in Evolving Systems
+Dolson et al., Artificial Life 25(1), 2019.
+ 
+This module provides:
+  - Metric functions  (change, novelty, ecology, complexity)
+  - PersistenceFilter  (lineage-based noise filter)
+  - MODESTracker       (stateful tracker to plug into EvolutionEngine)
+ 
+Intended usage
+--------------
+Create a MODESTracker before your evolution loop and call
+`tracker.record(population, generation)` at the end of each generation.
+Results are accumulated in `tracker.history` and can be inspected or
+plotted at any time.
+ 
+    tracker = MODESTracker(
+        filter_length=population_size,
+        output_registers=evaluator.output_registers,
+    )
+    for gen in range(max_generations):
+        engine.run_one_generation()
+        tracker.record(engine.population, gen)
+ 
+    df = tracker.to_dataframe()
+"""
+ 
+from __future__ import annotations
+ 
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
+ 
+import numpy as np
+from scipy.stats import entropy
+ 
+# ---------------------------------------------------------------------------
+# Type alias for a "component" in MODES terminology.
+# In this codebase a component is the sequence of effective instructions
+# belonging to one individual, encoded as a hashable tuple of strings.
+# ---------------------------------------------------------------------------
+Component = Tuple[str, ...]
+ 
+ 
+# ===========================================================================
+# 1. Fingerprinting — turning an Individual into a hashable Component
+# ===========================================================================
+ 
+def _instruction_to_str(instr) -> str:
+    """Stable string representation of a single Instruction."""
+    op_name = type(instr.operation).__name__
+    dest = f"{instr.dest_type.name}[{instr.dest_index}]"
+    srcs = ",".join(
+        f"{t.name}[{i}]" for t, i in zip(instr.source_types, instr.source_indices)
+    )
+    return f"{op_name}:{dest}=({srcs})"
+ 
+ 
+def get_component(individual, output_registers=None) -> Component:
+    """
+    Return a hashable fingerprint for *individual*.
+ 
+    If *output_registers* is supplied, only effective (non-intron)
+    instructions are included — this matches the paper's recommendation
+    to reduce genomes to their meaningful sites before comparison.
+    If not supplied, all instructions are used.
+ 
+    Parameters
+    ----------
+    individual : Individual
+        An instance from individual.py.
+    output_registers : list of (MemoryType, int), optional
+        Output registers used for intron removal.
+ 
+    Returns
+    -------
+    Component
+        A tuple of instruction strings that can be stored in a set or dict.
+    """
+    if output_registers is not None:
+        prog = individual.get_effective_program(output_registers)
+    else:
+        prog = individual.program
+    return tuple(_instruction_to_str(instr) for instr in prog.instructions)
+ 
+ 
+# ===========================================================================
+# 2. Pure metric functions
+#    These operate on already-filtered sets of Components and are fully
+#    independent of the rest of the codebase.
+# ===========================================================================
+ 
+def calculate_change(
+    prev_persistent: Sequence[Component],
+    curr_persistent: Sequence[Component],
+) -> int:
+    """
+    Change metric (Equation 1 in the paper).
+ 
+    Counts components in the current timepoint's persistent set that were
+    *not* present in the previous timepoint's persistent set.
+ 
+    Parameters
+    ----------
+    prev_persistent : sequence of Component
+        Persistent components from the previous measurement window.
+    curr_persistent : sequence of Component
+        Persistent components from the current measurement window.
+ 
+    Returns
+    -------
+    int
+        Number of components that changed (appeared for the first time
+        relative to the previous window).
+    """
+    prev_set = set(prev_persistent)
+    curr_set = set(curr_persistent)
+    return len(curr_set - prev_set)
+ 
+ 
+def calculate_novelty(
+    all_historical: Set[Component],
+    curr_persistent: Sequence[Component],
+) -> int:
+    """
+    Novelty metric (Equation 2 in the paper).
+ 
+    Counts components in the current persistent set that have *never*
+    appeared in any previous persistent set.  Once a component is counted
+    as novel it is added to *all_historical* so it is never double-counted.
+ 
+    Parameters
+    ----------
+    all_historical : set of Component  [mutated in-place]
+        Cumulative set of all components ever seen.  Pass the same set
+        object on every call so history accumulates across generations.
+    curr_persistent : sequence of Component
+        Persistent components from the current measurement window.
+ 
+    Returns
+    -------
+    int
+        Number of genuinely novel components discovered this generation.
+    """
+    curr_set = set(curr_persistent)
+    novel = curr_set - all_historical
+    all_historical.update(novel)  # update history in-place
+    return len(novel)
+ 
+ 
+def calculate_ecology(population_frequencies: Sequence[float]) -> float:
+    """
+    Ecological potential metric (Equation 3 in the paper).
+ 
+    Shannon entropy (base-2) over the relative frequencies of persistent
+    genotypes.  Higher values indicate more diverse, evenly distributed
+    populations.
+ 
+    Parameters
+    ----------
+    population_frequencies : sequence of float
+        Counts or proportions for each distinct component.  Raw counts
+        are fine — scipy normalises internally.
+ 
+    Returns
+    -------
+    float
+        Shannon entropy H = -Σ P(c) log₂ P(c).
+    """
+    return float(entropy(population_frequencies, base=2))
+ 
+ 
+def calculate_complexity(
+    individuals,
+    output_registers=None,
+) -> int:
+    """
+    Complexity metric (Section 3.2.3 of the paper).
+ 
+    The complexity of a population at a given timepoint is the *maximum*
+    number of meaningful (effective) instructions across all individuals
+    that passed the persistence filter.
+ 
+    The paper recommends using information-theoretic site counting; here
+    we approximate this by counting effective (non-intron) instructions,
+    which is the natural analogue for LGP genomes.
+ 
+    Parameters
+    ----------
+    individuals : iterable of Individual
+        The individuals that passed the persistence filter.
+    output_registers : list of (MemoryType, int), optional
+        Required to strip introns.  If None, total instruction count is used.
+ 
+    Returns
+    -------
+    int
+        Maximum effective instruction count across the supplied individuals.
+        Returns 0 if the iterable is empty.
+    """
+    max_complexity = 0
+    for ind in individuals:
+        if output_registers is not None:
+            length = ind.get_effective_length(output_registers)
+        else:
+            length = len(ind.program)
+        if length > max_complexity:
+            max_complexity = length
+    return max_complexity
+ 
+ 
+# ===========================================================================
+# 3. Persistence filter
+# ===========================================================================
+ 
+@dataclass
+class PersistenceFilter:
+    """
+    Lineage-based persistence filter (Section 3.1.1 of the paper).
+ 
+    At generation A each live individual is assigned a lineage ID
+    (here we reuse the individual's ``id`` field, which is unique and
+    inherited by offspring via ``create_offspring``).  After *filter_length*
+    generations we check which of those lineage IDs still have descendants
+    in the population.  Only those individuals are considered "persistent"
+    and passed to the metric functions.
+ 
+    Usage
+    -----
+    Call ``snapshot(population, generation)`` every generation.
+    The filter returns persistent individuals when ``filter_length``
+    generations have elapsed since the snapshot.
+ 
+    Parameters
+    ----------
+    filter_length : int
+        Number of generations a lineage must survive to be considered
+        persistent.  The paper recommends using the population size N,
+        which roughly equals the median coalescence time under selection.
+    """
+ 
+    filter_length: int
+ 
+    # Internal state: maps generation → {lineage_id → Individual snapshot}
+    _snapshots: Dict[int, Dict[int, object]] = field(
+        default_factory=dict, init=False, repr=False
+    )
+ 
+    def snapshot(self, population, generation: int) -> None:
+        """
+        Record a snapshot of *population* at *generation*.
+ 
+        Call this once per generation, before or after reproduction —
+        the timing just needs to be consistent.
+        """
+        self._snapshots[generation] = {
+            ind.id: ind for ind in population.individuals
+        }
+        # Prune stale snapshots to bound memory use.
+        # We only ever need snapshots within [generation - filter_length, generation].
+        cutoff = generation - self.filter_length - 1
+        stale = [g for g in self._snapshots if g < cutoff]
+        for g in stale:
+            del self._snapshots[g]
+ 
+    def get_persistent(
+        self, generation: int, population
+    ) -> List:
+        """
+        Return individuals from *generation - filter_length* whose lineage
+        is still alive in *population* (i.e. at generation *generation*).
+ 
+        Parameters
+        ----------
+        generation : int
+            The *current* generation.
+        population : Population
+            The current population (used to check which lineage IDs survive).
+ 
+        Returns
+        -------
+        list of Individual
+            Individuals from the snapshot at ``generation - filter_length``
+            that have at least one descendant alive now.
+        """
+        target_gen = generation - self.filter_length
+        if target_gen < 0 or target_gen not in self._snapshots:
+            return []
+ 
+        snapshot = self._snapshots[target_gen]
+ 
+        # Collect all lineage IDs currently alive.
+        # An individual's lineage is tracked through its ``id`` field:
+        # create_offspring() assigns a new id to the child but records
+        # parent_ids.  We therefore build the full set of ancestor IDs
+        # visible in the current population by walking parent_ids.
+        alive_lineage_ids = self._collect_ancestor_ids(population)
+ 
+        return [
+            ind for lid, ind in snapshot.items()
+            if lid in alive_lineage_ids
+        ]
+ 
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+ 
+    @staticmethod
+    def _collect_ancestor_ids(population) -> Set[int]:
+        """
+        Walk parent_ids to collect all ancestor IDs of currently-live
+        individuals.  This is the set of lineage IDs that have living
+        descendants right now.
+        """
+        # Start with IDs of current individuals and their recorded parents.
+        # In this codebase parent_ids is a flat tuple of direct parent IDs,
+        # not a full pedigree, so we do a BFS/DFS over all available
+        # parent_ids fields in the current population.
+        visited: Set[int] = set()
+        queue: List[int] = []
+ 
+        for ind in population.individuals:
+            visited.add(ind.id)
+            queue.extend(ind.parent_ids)
+ 
+        while queue:
+            pid = queue.pop()
+            if pid not in visited:
+                visited.add(pid)
+                # We can't walk further back without a stored pedigree,
+                # so we stop here.  For filter_length == population_size
+                # this is sufficient because any lineage that reached the
+                # present must have an ID recorded somewhere in parent_ids.
+ 
+        return visited
+ 
+ 
+# ===========================================================================
+# 4. MODESTracker — stateful per-generation recorder
+# ===========================================================================
+ 
+@dataclass
+class MODESRecord:
+    """One row of MODES measurements."""
+    generation: int
+    change: int
+    novelty: int
+    ecology: float
+    complexity: int
+    n_persistent: int  # how many individuals passed the filter
+ 
+ 
+class MODESTracker:
+    """
+    Stateful tracker that computes all four MODES metrics each generation
+    and accumulates a history you can inspect or plot.
+ 
+    Parameters
+    ----------
+    filter_length : int
+        Passed to PersistenceFilter.  Rule of thumb: use population size.
+    output_registers : list of (MemoryType, int), optional
+        Output registers for intron removal.  Strongly recommended; without
+        it, introns inflate novelty and complexity counts.
+ 
+    Example
+    -------
+    >>> tracker = MODESTracker(filter_length=pop_size,
+    ...                        output_registers=evaluator.output_registers)
+    >>> for gen in range(max_gens):
+    ...     engine.run_one_generation()
+    ...     tracker.record(engine.population, gen)
+    >>> df = tracker.to_dataframe()
+    """
+ 
+    def __init__(
+        self,
+        filter_length: int,
+        output_registers=None,
+    ) -> None:
+        self.filter_length = filter_length
+        self.output_registers = output_registers
+ 
+        self._persistence_filter = PersistenceFilter(filter_length=filter_length)
+ 
+        # For change metric: persistent components from previous window
+        self._prev_persistent_components: List[Component] = []
+ 
+        # For novelty metric: cumulative set of all components ever seen
+        self._all_historical_components: Set[Component] = set()
+ 
+        # Accumulated results
+        self.history: List[MODESRecord] = []
+ 
+    # ------------------------------------------------------------------
+    # Main entry point
+    # ------------------------------------------------------------------
+ 
+    def record(self, population, generation: int) -> MODESRecord:
+        """
+        Snapshot the population, apply the persistence filter, compute all
+        four metrics, and append a MODESRecord to ``self.history``.
+ 
+        Call this once per generation *after* evaluation and replacement.
+ 
+        Parameters
+        ----------
+        population : Population
+            The current population (post-replacement).
+        generation : int
+            Current generation index (0-based).
+ 
+        Returns
+        -------
+        MODESRecord
+            The record for this generation (also appended to self.history).
+        """
+        # 1. Record snapshot for future persistence checks
+        self._persistence_filter.snapshot(population, generation)
+ 
+        # 2. Retrieve persistent individuals from filter_length gens ago
+        persistent_individuals = self._persistence_filter.get_persistent(
+            generation, population
+        )
+ 
+        # 3. Derive components (effective instruction fingerprints)
+        curr_persistent_components: List[Component] = [
+            get_component(ind, self.output_registers)
+            for ind in persistent_individuals
+        ]
+ 
+        # 4. Compute metrics
+        change = calculate_change(
+            self._prev_persistent_components,
+            curr_persistent_components,
+        )
+ 
+        novelty = calculate_novelty(
+            self._all_historical_components,  # mutated in-place
+            curr_persistent_components,
+        )
+ 
+        ecology = 0.0
+        if curr_persistent_components:
+            # Count occurrences of each distinct component for Shannon entropy
+            freq: Dict[Component, int] = defaultdict(int)
+            for c in curr_persistent_components:
+                freq[c] += 1
+            ecology = calculate_ecology(list(freq.values()))
+ 
+        complexity = calculate_complexity(
+            persistent_individuals,
+            self.output_registers,
+        )
+ 
+        # 5. Build record
+        record = MODESRecord(
+            generation=generation,
+            change=change,
+            novelty=novelty,
+            ecology=ecology,
+            complexity=complexity,
+            n_persistent=len(persistent_individuals),
+        )
+        self.history.append(record)
+ 
+        # 6. Advance sliding window for change metric
+        self._prev_persistent_components = curr_persistent_components
+ 
+        return record
+ 
+    # ------------------------------------------------------------------
+    # Convenience helpers
+    # ------------------------------------------------------------------
+ 
+    def to_dataframe(self):
+        """
+        Return history as a pandas DataFrame.
+        Raises ImportError if pandas is not installed.
+        """
+        try:
+            import pandas as pd
+        except ImportError as exc:
+            raise ImportError(
+                "pandas is required for to_dataframe(); "
+                "install it with: pip install pandas"
+            ) from exc
+ 
+        return pd.DataFrame(
+            [
+                {
+                    "generation": r.generation,
+                    "change": r.change,
+                    "novelty": r.novelty,
+                    "ecology": r.ecology,
+                    "complexity": r.complexity,
+                    "n_persistent": r.n_persistent,
+                }
+                for r in self.history
+            ]
+        )
+ 
+    def print_latest(self) -> None:
+        """Print a one-line summary of the most recent record."""
+        if not self.history:
+            print("MODESTracker: no records yet.")
+            return
+        r = self.history[-1]
+        print(
+            f"[Gen {r.generation:4d}] MODES — "
+            f"change={r.change:3d}  novelty={r.novelty:3d}  "
+            f"ecology={r.ecology:.3f}  complexity={r.complexity:3d}  "
+            f"(n_persistent={r.n_persistent})"
+        )

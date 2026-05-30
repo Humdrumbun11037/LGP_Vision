@@ -25,6 +25,11 @@ class Individual:
     # Internal cache fields (not in __init__)
     _effective_program: Optional[Program] = field(default=None, init=False)
     _output_registers: Optional[List[Tuple[MemoryType, int]]] = field(default=None, init=False)
+    lineage_id: Optional[int] = field(default=None)
+
+    def __post_init__(self):
+        if self.lineage_id is None:
+            self.lineage_id = self.id
 
     def get_effective_program(self, output_registers: List[Tuple[MemoryType, int]]) -> Program:
         """Get intron-removed program, computing lazily if needed."""
@@ -73,6 +78,7 @@ class Individual:
         """Create offspring with this individual's program but new ID and parents"""
         offspring = self.copy(new_id=True)
         offspring.parent_ids = parent_ids
+        offspring.lineage_id = self.lineage_id
         offspring.age = 0
         offspring.invalidate_fitness()
         return offspring

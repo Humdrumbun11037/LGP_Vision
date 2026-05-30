@@ -1,0 +1,68 @@
+memory:
+  n_scalar: 8
+  n_vector: 8
+  n_matrix: 8
+  n_obs_scalar: 0
+  n_obs_vector: 0
+  n_obs_matrix: 2
+  vector_size: 21
+  matrix_shape:
+  - 21
+  - 21
+evaluator:
+  env_id: FlappyBird-v0
+  episodes: 1
+  max_steps: 500
+  output_register: 0
+  action_repeat: 5
+  headless: true
+  render_mode: human
+  patch_strategy: trinary
+  color_channel: 2
+  normalize: false
+  quantization_factor: 0.03
+  quantized_final_size: 21
+  feature_vector_size: 21
+  frame_stack_size: 2
+  trinary_crop_bottom: 100
+  trinary_resize_factor: 0.03
+  trinary_final_size: 21
+  trinary_bird_h_min: 0
+  trinary_bird_h_max: 50
+  trinary_bird_s_min: 50
+  trinary_bird_s_max: 255
+  trinary_bird_v_min: 50
+  trinary_bird_v_max: 255
+  trinary_pipe_h_min: 35
+  trinary_pipe_h_max: 45
+  trinary_pipe_s_min: 40
+  trinary_pipe_s_max: 255
+  trinary_pipe_v_min: 40
+  trinary_pipe_v_max: 255
+  n_jobs: 8
+population:
+  size: 5
+  program_length:
+  - 1
+  - 10
+  elitism: 1
+  max_program_length: 64
+evolution:
+  max_generations: 50
+  mutation_threshold: 0.2
+  constant_mutation_rate: 0.1
+  crossover_threshold: 0.2
+  verbose: true
+operations:
+  use_feature_vector_ops: false
+  use_minimal_scalar: false
+  use_minimal: true
+  use_automl_no_random: false
+  use_automl: false
+  use_cv: false
+experiment:
+  name: quantized_frame_stack_2_1000
+  base_dir: experiments/quantized_fr
+  checkpoint_every: null
+  keep_n_checkpoints: null
+random_seed: 54
