@@ -71,7 +71,7 @@ evolution:
   max_generations: 120       # Maximum number of generations
   mutation_threshold: 0.1     # Probability threshold for mutation (0.0-1.0)
   constant_mutation_rate: 0.1 # Probability of mutating constants (0.0-1.0)
-  crossover_threshold: 0.05     # Probability threshold for crossover (0.0-1.0)
+  crossover_threshold: 0.9     # Probability threshold for crossover (0.0-1.0)
   verbose: true               # Print detailed progress information
 
 # Operations Configuration

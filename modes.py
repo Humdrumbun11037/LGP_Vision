@@ -220,8 +220,7 @@ class PersistenceFilter:
     Lineage-based persistence filter (Section 3.1.1 of the paper).
  
     At generation A each live individual is assigned a lineage ID
-    (here we reuse the individual's ``id`` field, which is unique and
-    inherited by offspring via ``create_offspring``).  After *filter_length*
+    After *filter_length*
     generations we check which of those lineage IDs still have descendants
     in the population.  Only those individuals are considered "persistent"
     and passed to the metric functions.
@@ -248,21 +247,10 @@ class PersistenceFilter:
     )
  
     def snapshot(self, population, generation: int) -> None:
-        """
-        Record a snapshot of *population* at *generation*.
- 
-        Call this once per generation, before or after reproduction —
-        the timing just needs to be consistent.
-        """
-        self._snapshots[generation] = {
-            ind.id: ind for ind in population.individuals
-        }
-        # Prune stale snapshots to bound memory use.
-        # We only ever need snapshots within [generation - filter_length, generation].
-        cutoff = generation - self.filter_length - 1
-        stale = [g for g in self._snapshots if g < cutoff]
-        for g in stale:
-            del self._snapshots[g]
+        snapshot = defaultdict(list)
+        for ind in population.individuals:
+            snapshot[ind.lineage_id].append(ind)
+        self._snapshots[generation] = dict(snapshot)
  
     def get_persistent(
         self, generation: int, population
@@ -298,9 +286,11 @@ class PersistenceFilter:
         alive_lineage_ids = self._collect_ancestor_ids(population)
  
         return [
-            ind for lid, ind in snapshot.items()
+            ind
+            for lid, individuals in snapshot.items()
             if lid in alive_lineage_ids
-        ]
+            for ind in individuals        # ← flatten the inner list
+]
  
     # ------------------------------------------------------------------
     # Helpers
@@ -308,32 +298,7 @@ class PersistenceFilter:
  
     @staticmethod
     def _collect_ancestor_ids(population) -> Set[int]:
-        """
-        Walk parent_ids to collect all ancestor IDs of currently-live
-        individuals.  This is the set of lineage IDs that have living
-        descendants right now.
-        """
-        # Start with IDs of current individuals and their recorded parents.
-        # In this codebase parent_ids is a flat tuple of direct parent IDs,
-        # not a full pedigree, so we do a BFS/DFS over all available
-        # parent_ids fields in the current population.
-        visited: Set[int] = set()
-        queue: List[int] = []
- 
-        for ind in population.individuals:
-            visited.add(ind.id)
-            queue.extend(ind.parent_ids)
- 
-        while queue:
-            pid = queue.pop()
-            if pid not in visited:
-                visited.add(pid)
-                # We can't walk further back without a stored pedigree,
-                # so we stop here.  For filter_length == population_size
-                # this is sufficient because any lineage that reached the
-                # present must have an ID recorded somewhere in parent_ids.
- 
-        return visited
+        return {ind.lineage_id for ind in population.individuals}
  
  
 # ===========================================================================
