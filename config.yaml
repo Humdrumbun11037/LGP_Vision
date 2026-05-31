@@ -60,15 +60,15 @@ evaluator:
 # Population Configuration
 # Settings for the evolutionary population
 population:
-  size: 15                 # Population size
+  size: 5                 # Population size
   program_length: [1, 15]     # Program length range [min, max]
-  elitism: 2               # Number of elite individuals to preserve
+  elitism: 1               # Number of elite individuals to preserve
   max_program_length: 64     # Maximum program length (null for no limit)
 
 # Evolution Configuration
 # Settings for the evolutionary algorithm
 evolution:
-  max_generations: 120       # Maximum number of generations
+  max_generations: 20       # Maximum number of generations
   mutation_threshold: 0.1     # Probability threshold for mutation (0.0-1.0)
   constant_mutation_rate: 0.1 # Probability of mutating constants (0.0-1.0)
   crossover_threshold: 0.9     # Probability threshold for crossover (0.0-1.0)

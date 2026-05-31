@@ -21,6 +21,7 @@ from operators import GeneticOperators
 from evaluator import FlappyBirdEvaluator, FlappyBirdEvaluatorConfig
 from evolution_engine import EvolutionEngine, EvolutionConfig
 from experiment_manager import ExperimentManager
+from modes import MODESTracker
 
 # Import config loader
 from config_loader import (
@@ -177,7 +178,20 @@ def main(config_path: str = "config.yaml", random_seed: Optional[int] = None):
     
     # Time the evolution cycle
     start_time = time.time()
-    final_population = engine.run()
+    modes_tracker = MODESTracker(
+        filter_length=pop_config.size,  # paper recommends population size
+        output_registers=getattr(evaluator, "output_registers", None),
+    )
+    final_population = engine.run(modes_tracker=modes_tracker)
+
+    # After engine.run(), save the results:
+    try:
+        modes_df = modes_tracker.to_dataframe()
+        modes_csv_path = manager.run_dir / "modes_metrics.csv"
+        modes_df.to_csv(modes_csv_path, index=False)
+        print(f"MODES metrics saved to: {modes_csv_path}")
+    except ImportError:
+        print("pandas not installed — MODES history not saved as CSV")
     end_time = time.time()
     elapsed_time = end_time - start_time
     

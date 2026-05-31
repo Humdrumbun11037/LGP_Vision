@@ -73,7 +73,7 @@ class EvolutionEngine:
         if self.config.stats_log_path is not None:
             self._init_stats_logging()
 
-    def run(self) -> Population:
+    def run(self, modes_tracker=None) -> Population:
         for gen in range(self.config.max_generations):
             # evaluate all 
             # Get n_jobs from evaluator config
@@ -99,6 +99,10 @@ class EvolutionEngine:
             self._log_generation_stats(gen)
             self._check_and_save_checkpoint(gen)
 
+            # ← ADD THIS (just before the offspring block)
+            if modes_tracker is not None:
+                modes_tracker.record(self.population, gen)
+                modes_tracker.print_latest()
 
 
             if self.config.verbose:
