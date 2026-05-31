@@ -55,11 +55,10 @@ class Program:
             dest = (instr.dest_type, instr.dest_index)
             if dest in output_set: # mark instruction 
                 marked_set.append(instr)
-                output_set.discard(dest)
-                for src_type, src_index in zip(instr.source_types, instr.source_indices):
-                    operand = (src_type, src_index)
-                    if operand not in output_set:
-                        output_set.add(operand)
+                sources = set(zip(instr.source_types, instr.source_indices))
+                output_set.update(sources)
+                if dest not in sources:
+                    output_set.discard(dest)      
         marked_set.reverse()
         self.instructions = marked_set
         
