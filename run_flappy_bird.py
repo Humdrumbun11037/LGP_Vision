@@ -179,7 +179,7 @@ def main(config_path: str = "config.yaml", random_seed: Optional[int] = None):
     # Time the evolution cycle
     start_time = time.time()
     modes_tracker = MODESTracker(
-        filter_length=pop_config.size,  # paper recommends population size
+        filter_length=pop_config.elitism,  # paper recommends population size
         output_registers=getattr(evaluator, "output_registers", None),
     )
     final_population = engine.run(modes_tracker=modes_tracker)

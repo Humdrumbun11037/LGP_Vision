@@ -22,7 +22,7 @@ class EvolutionConfig:
     mutation_threshold: float = 0.1
     constant_mutation_rate: float = 0.0
     crossover_threshold: float = 0.9
-    verbose: bool = True
+    verbose: bool = False
     # Checkpoint settings (managed by ExperimentManager)
     checkpoint_dir: Optional[str] = None  # Directory for checkpoints
     checkpoint_every: Optional[int] = None  # Save every N generations (None = only on improvement)
