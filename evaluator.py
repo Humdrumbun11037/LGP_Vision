@@ -456,6 +456,9 @@ class FlappyBirdEvaluator(FitnessEvaluator):
             from memory_system import MemoryType
             config.output_registers = [(MemoryType.SCALAR, config.output_register)]
         
+                
+        self.output_registers = config.output_registers  # ← add this
+
         super().__init__(config)
         self.env = gym.make(config.env_id, render_mode=config.render_mode)
         self.max_steps = config.max_steps
@@ -966,6 +969,8 @@ class FlappyBirdSimpleEvaluator(FitnessEvaluator):
             from memory_system import MemoryType
             config.output_registers = [(MemoryType.SCALAR, config.output_register)]
         
+        self.output_registers = config.output_registers  # ← add this
+
         super().__init__(config)
         
         # Create environment with use_lidar=False for 12-feature vector

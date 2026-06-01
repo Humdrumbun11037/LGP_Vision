@@ -1,0 +1,30 @@
+{
+  "run_id": "run_20260531_143802_quantized_frame_stack_2_1000_seed531237",
+  "start_time": "2026-05-31T14:38:02.229083",
+  "end_time": "2026-05-31T21:20:22.768138",
+  "status": "completed",
+  "config_summary": {
+    "random_seed": 531237,
+    "population_size": 500,
+    "program_length": [
+      1,
+      15
+    ],
+    "elitism": 5,
+    "max_generations": 100,
+    "mutation_threshold": 0.1,
+    "crossover_threshold": 0.9,
+    "patch_strategy": "trinary",
+    "episodes": 3,
+    "max_steps": 250,
+    "n_jobs": 8,
+    "operation_set": "full"
+  },
+  "results": {
+    "best_fitness": 0.7849999999999969,
+    "best_generation": 61,
+    "final_generation": 99,
+    "runtime_seconds": 24140.539055,
+    "runtime_formatted": "6h 42m 20s"
+  }
+}
