@@ -217,89 +217,61 @@ def calculate_complexity(
 @dataclass
 class PersistenceFilter:
     """
-    Lineage-based persistence filter (Section 3.1.1 of the paper).
- 
-    At generation A each live individual is assigned a lineage ID
-    After *filter_length*
-    generations we check which of those lineage IDs still have descendants
-    in the population.  Only those individuals are considered "persistent"
-    and passed to the metric functions.
- 
-    Usage
-    -----
-    Call ``snapshot(population, generation)`` every generation.
-    The filter returns persistent individuals when ``filter_length``
-    generations have elapsed since the snapshot.
- 
-    Parameters
-    ----------
-    filter_length : int
-        Number of generations a lineage must survive to be considered
-        persistent.  The paper recommends using the population size N,
-        which roughly equals the median coalescence time under selection.
+    Ancestry-based persistence filter (Section 3.1.1 of the paper).
+
+    At generation A, each individual is recorded with its id and
+    parent_ids. After `filter_length` generations (A + filter_length),
+    we walk the parent_ids chain backward from the *current* population
+    to generation A, building the exact set of A-generation ids that
+    are ancestors of individuals alive now. Only those individuals
+    are "persistent".
     """
- 
+
     filter_length: int
- 
-    # Internal state: maps generation → {lineage_id → Individual snapshot}
-    _snapshots: Dict[int, Dict[int, object]] = field(
+
+    # generation -> list of (id, parent_ids, Individual)
+    _snapshots: Dict[int, List[Tuple[int, Tuple[int, ...], object]]] = field(
         default_factory=dict, init=False, repr=False
     )
- 
+
     def snapshot(self, population, generation: int) -> None:
-        snapshot = defaultdict(list)
-        for ind in population.individuals:
-            snapshot[ind.lineage_id].append(ind)
-        self._snapshots[generation] = dict(snapshot)
- 
-    def get_persistent(
-        self, generation: int, population
-    ) -> List:
-        """
-        Return individuals from *generation - filter_length* whose lineage
-        is still alive in *population* (i.e. at generation *generation*).
- 
-        Parameters
-        ----------
-        generation : int
-            The *current* generation.
-        population : Population
-            The current population (used to check which lineage IDs survive).
- 
-        Returns
-        -------
-        list of Individual
-            Individuals from the snapshot at ``generation - filter_length``
-            that have at least one descendant alive now.
-        """
+        self._snapshots[generation] = [
+            (ind.id, ind.parent_ids, ind) for ind in population.individuals
+        ]
+        # Drop snapshots we'll never need for a future query.
+        cutoff = generation - self.filter_length
+        for g in list(self._snapshots.keys()):
+            if g < cutoff:
+                del self._snapshots[g]
+
+    def get_persistent(self, generation: int, population) -> List:
         target_gen = generation - self.filter_length
         if target_gen < 0 or target_gen not in self._snapshots:
             return []
- 
-        snapshot = self._snapshots[target_gen]
- 
-        # Collect all lineage IDs currently alive.
-        # An individual's lineage is tracked through its ``id`` field:
-        # create_offspring() assigns a new id to the child but records
-        # parent_ids.  We therefore build the full set of ancestor IDs
-        # visible in the current population by walking parent_ids.
-        alive_lineage_ids = self._collect_ancestor_ids(population)
- 
-        return [
-            ind
-            for lid, individuals in snapshot.items()
-            if lid in alive_lineage_ids
-            for ind in individuals        # ← flatten the inner list
-]
- 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
- 
-    @staticmethod
-    def _collect_ancestor_ids(population) -> Set[int]:
-        return {ind.lineage_id for ind in population.individuals}
- 
+
+        # Start from the ids alive right now and walk backward.
+        ancestor_ids: Set[int] = {ind.id for ind in population.individuals}
+
+        for g in range(generation, target_gen, -1):
+            if g not in self._snapshots or (g - 1) not in self._snapshots:
+                return []  # broken chain — shouldn't happen if record() is called every gen
+
+            parent_ids_by_id = {iid: pids for iid, pids, _ in self._snapshots[g]}
+            prev_ids = {iid for iid, _, _ in self._snapshots[g - 1]}
+
+            next_ids: Set[int] = set()
+            for iid in ancestor_ids:
+                if iid in prev_ids:
+                    # Same id existed last generation -> elite/carry-over,
+                    # it IS its own ancestor at g-1.
+                    next_ids.add(iid)
+                else:
+                    # Freshly created this generation -> trace to its
+                    # recorded parents from g-1.
+                    next_ids.update(parent_ids_by_id.get(iid, ()))
+            ancestor_ids = next_ids
+
+        return [ind for iid, _, ind in self._snapshots[target_gen] if iid in ancestor_ids] 
  
 # ===========================================================================
 # 4. MODESTracker — stateful per-generation recorder

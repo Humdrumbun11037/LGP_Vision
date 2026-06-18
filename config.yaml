@@ -20,7 +20,7 @@ memory:
 # Settings for the FlappyBird environment evaluator
 evaluator:
   env_id: "FlappyBird-v0"  # Gymnasium environment ID
-  episodes: 6          # Number of episodes per evaluation
+  episodes: 3          # Number of episodes per evaluation
   max_steps: 500           # Maximum steps per episode
   output_register: 0      # Scalar register to read action from
   action_repeat: 5        # Number of frames to repeat each action (1 = decision every frame, 5 = decision every 5 frames)
@@ -69,10 +69,18 @@ population:
 # Settings for the evolutionary algorithm
 evolution:
   max_generations: 100       # Maximum number of generations
-  mutation_threshold: 0.2     # Probability threshold for mutation (0.0-1.0)
+  mutation_threshold: 0.1     # Probability threshold for mutation (0.0-1.0)
   constant_mutation_rate: 0.1 # Probability of mutating constants (0.0-1.0)
   crossover_threshold: 0.9     # Probability threshold for crossover (0.0-1.0)
   verbose: true               # Print detailed progress information
+  # Adaptive mutation rates: if true, scalar registers 1-4 (just after the output
+  # register at index 0) encode evolved per-individual mutation rates [0, 1].
+  # Register 1 = micro-mutation rate, 2 = add-instruction rate,
+  # 3 = delete-instruction rate, 4 = crossover threshold.
+  # These registers are protected during random initialisation (no instruction
+  # will write to them), so they start as random evolvable constants and are
+  # shaped purely by selection.
+  adaptive_mutation_rates: true
 
 # Operations Configuration
 # Which operation sets to include (checked in order, first true wins)

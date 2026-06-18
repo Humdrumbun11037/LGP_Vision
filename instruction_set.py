@@ -14,15 +14,23 @@ class InstructionSet:
     - Store available operations
     - Generate type-safe random instructions
     - Respect obs (read-only) vs working (read-write) distinction
+    - Optionally protect adaptive mutation rate registers from being written
+      during random initialisation (registers 1-4, i.e. just after the output
+      register at index 0).
     """
     
     def __init__(self, 
                  operations: List[Operation],
-                 memory_config: MemoryConfig):
+                 memory_config: MemoryConfig,
+                 protected_scalar_dest_indices: Optional[List[int]] = None):
         """
         Args:
             operations: List of operation instances to use
             memory_config: Memory configuration with register counts and dimensions
+            protected_scalar_dest_indices: Scalar destination register indices that
+                random instruction generation must never write to.  Used to protect
+                the adaptive mutation rate registers so that they start as pure
+                evolvable constants and are shaped only by selection.
         """
         self.operations = operations
         self.memory_config = memory_config  # Store for later use
@@ -35,12 +43,27 @@ class InstructionSet:
         self.vector_size = memory_config.vector_size
         self.matrix_shape = memory_config.matrix_shape
 
+        # Indices of scalar destination registers that are off-limits for
+        # randomly generated instructions.  These registers act as evolvable
+        # constants for adaptive mutation rates.
+        self._protected_scalar_dests: List[int] = list(protected_scalar_dest_indices or [])
+
         # Pre-compute available observation types (those with n > 0)
         self._available_obs_types = self._get_available_obs_types()
         
-        # Pre-compute index ranges for efficiency
+        # Pre-compute index ranges for efficiency.
+        # For scalars, exclude any protected destination indices so random
+        # program generation never overwrites them.
+        all_scalar_dests = list(range(0, self.n_scalar))
+        protected_set = set(self._protected_scalar_dests)
+        writeable_scalar_dests = [i for i in all_scalar_dests if i not in protected_set]
+
+        # Fall back to all registers if protection would leave no writable dest.
+        if not writeable_scalar_dests:
+            writeable_scalar_dests = all_scalar_dests
+
         self._dest_ranges = {
-            MemoryType.SCALAR: list(range(0, self.n_scalar)),    # Work only
+            MemoryType.SCALAR: writeable_scalar_dests,
             MemoryType.VECTOR: list(range(0, self.n_vector)),
             MemoryType.MATRIX: list(range(0, self.n_matrix)),
         }
@@ -101,6 +124,10 @@ class InstructionSet:
         """
         Generate a random type-safe instruction.
         
+        Destination scalar registers listed in ``_protected_scalar_dests`` are
+        never chosen as a destination, so the adaptive mutation rate registers
+        remain intact during random program generation.
+        
         Args:
             rng: numpy random generator (optional)
         
@@ -140,7 +167,7 @@ class InstructionSet:
             source_obs_register_types.append(obs_reg_type)
             source_obs_register_indices.append(obs_reg_idx)
         
-        # Pick destination register (working registers only)
+        # Pick destination register (working registers only, respecting protections)
         dest_type = op.output_type()
         dest_index = rng.choice(self._dest_ranges[dest_type])
         
@@ -157,15 +184,18 @@ class InstructionSet:
             for _ in range(length)
         ]
         return Program(instructions)  
+
     def get_random_operator(self, rng= None):
         if rng is None:
             rng = np.random.default_rng()
         return rng.choice(self.operations)
-    def get_random_dest(self,dest_type,rng= None):
+
+    def get_random_dest(self, dest_type, rng=None):
         if rng is None:
             rng = np.random.default_rng()
         dest_index = rng.choice(self._dest_ranges[dest_type])
         return dest_index
+
     def get_random_source(self, source_type, rng=None):
         """
         Generate a random source index in large range.
@@ -186,10 +216,3 @@ class InstructionSet:
         
         # Always generate large range index - interpretation happens during execute()
         return int(rng.integers(0, 10000))
-
-
-
-        
-
-        
-

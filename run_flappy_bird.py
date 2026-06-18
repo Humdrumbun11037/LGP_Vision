@@ -19,7 +19,10 @@ from operation import AUTOML_ALL_OPS, AUTOML_NO_RANDOM_OPS, CV_ALL_OPS, FLAPPYBI
 from population import Population, PopulationConfig
 from operators import GeneticOperators
 from evaluator import FlappyBirdEvaluator, FlappyBirdEvaluatorConfig
-from evolution_engine import EvolutionEngine, EvolutionConfig
+from evolution_engine import (
+    EvolutionEngine, EvolutionConfig,
+    ADAPTIVE_RATE_NAMES, N_ADAPTIVE_RATE_REGISTERS,
+)
 from experiment_manager import ExperimentManager
 from modes import MODESTracker
 
@@ -32,6 +35,7 @@ from config_loader import (
     create_evolution_config,
     get_operations_config,
     get_experiment_config,
+    get_protected_scalar_registers,
 )
 
 
@@ -45,19 +49,15 @@ def main(config_path: str = "config.yaml", random_seed: Optional[int] = None):
     if random_seed is None:
         raise ValueError("Random seed must be provided via --seed argument")
     
-    # Load configuration from YAML
     print(f"Loading configuration from: {config_path}")
     config = load_config(config_path)
     
-    # Override config with command line seed
     config['random_seed'] = random_seed
     rng = np.random.default_rng(random_seed)
     print(f"Using random seed: {random_seed}")
 
-    # Create experiment manager (creates directory structure, saves config copy)
     exp_config = get_experiment_config(config)
     
-    # Always append seed to experiment name
     exp_name = exp_config.get('name', '')
     if exp_name:
         exp_config['name'] = f"{exp_name}_seed{random_seed}"
@@ -68,15 +68,12 @@ def main(config_path: str = "config.yaml", random_seed: Optional[int] = None):
     print(f"\nExperiment: {manager.run_id}")
     print(f"Output dir: {manager.run_dir}")
 
-    # Setup headless mode if specified in config
     eval_cfg = config.get('evaluator', {})
     headless = eval_cfg.get('headless', True)
 
-    # Create configurations from YAML
     memory_cfg = create_memory_config(config)
     eval_config = create_evaluator_config(config)
     
-    # Setup pygame for headless mode if needed
     if headless or eval_config.render_mode == "rgb_array":
         import os
         os.environ['SDL_VIDEODRIVER'] = 'dummy'
@@ -85,33 +82,37 @@ def main(config_path: str = "config.yaml", random_seed: Optional[int] = None):
         print("Running with human rendering (windows will be displayed)")
     
     pop_config = create_population_config(config)
-    evolution_config = create_evolution_config(config, manager)  # Pass manager for paths
+    evolution_config = create_evolution_config(config, manager)
     ops_config = get_operations_config(config)
 
+    # Determine which scalar registers are protected from random writes
+    protected_regs = get_protected_scalar_registers(config)
+
     print(f"\nMemory config: {memory_cfg}")
+    if protected_regs:
+        print(f"Adaptive mutation rates ENABLED — protected scalar registers: {protected_regs}")
+        print(f"  Reg {protected_regs[0]}: micro_mutation rate")
+        print(f"  Reg {protected_regs[1]}: add_instruction rate")
+        print(f"  Reg {protected_regs[2]}: delete_instruction rate")
+        print(f"  Reg {protected_regs[3]}: crossover_threshold")
+    else:
+        print("Adaptive mutation rates DISABLED — using fixed rates from config")
     
-    # Setup operations based on config
+    # Setup operations
     if ops_config.get('use_feature_vector_ops', False):
         all_ops = FEATURE_VECTOR_OPS
         print(f"\nUsing FEATURE_VECTOR operation set: {len(all_ops)} operations")
         print("  - 8 scalar ops: add, sub, mul, div, cos, log, exp, conditional")
         print("  - 4 vector ops: dot_product, mean, sum, norm")
-        print("  (Optimized for feature_vector strategy)")
     elif ops_config.get('use_minimal_scalar', False):
         all_ops = MINIMAL_SCALAR_OPS
         print(f"\nUsing MINIMAL SCALAR operation set: {len(all_ops)} operations")
         print("  - add, sub, mul, div (protected)")
         print("  - cos, log, exp")
         print("  - conditional (if-then-else)")
-        print("  (Scalar-only for feature_vector strategy)")
     elif ops_config.get('use_minimal', False):
         all_ops = FLAPPYBIRD_MINIMAL_OPS
         print(f"\nUsing MINIMAL operation set: {len(all_ops)} operations")
-        print("  - 9 scalar arithmetic ops (add, sub, mul, div, min, max, abs, heaviside, conditional)")
-        print("  - 3 scalar trig ops (sin, cos, arctan)")
-        print("  - 5 vector ops (intermediate processing)")
-        print("  - 6 matrix ops (image manipulation)")
-        print("  - 5 CV ops (feature extraction)")
     else:
         all_ops = []
         if ops_config.get('use_automl_no_random', False):
@@ -129,10 +130,15 @@ def main(config_path: str = "config.yaml", random_seed: Optional[int] = None):
         if ops_config['use_cv']:
             print(f"  - CV operations: {len(CV_ALL_OPS)}")
     
-    instruction_set = InstructionSet([op() for op in all_ops], memory_cfg)
+    # Pass protected registers to InstructionSet so they are never chosen as
+    # random write destinations during initialisation or macro-mutation.
+    instruction_set = InstructionSet(
+        [op() for op in all_ops],
+        memory_cfg,
+        protected_scalar_dest_indices=protected_regs,
+    )
     operators = GeneticOperators(instruction_set, rng)
 
-    # Create FlappyBird evaluator
     evaluator = FlappyBirdEvaluator(config=eval_config)
 
     print("\nFlappyBird Evaluator created!")
@@ -140,7 +146,6 @@ def main(config_path: str = "config.yaml", random_seed: Optional[int] = None):
     print(f"  Color channel: {evaluator.color_channel} (G)")
     print(f"  Episodes per evaluation: {evaluator.episodes}")
 
-    # Create population
     population = Population(
         pop_config,
         instruction_set,
@@ -164,7 +169,6 @@ def main(config_path: str = "config.yaml", random_seed: Optional[int] = None):
         from multiprocessing import cpu_count
         print(f"Parallelization: Auto-detect ({cpu_count()} CPUs available)")
 
-    # Create and run evolution engine
     engine = EvolutionEngine(
         population=population,
         operators=operators,
@@ -176,15 +180,13 @@ def main(config_path: str = "config.yaml", random_seed: Optional[int] = None):
     print("\nStarting evolution...")
     print("=" * 60)
     
-    # Time the evolution cycle
     start_time = time.time()
     modes_tracker = MODESTracker(
-        filter_length=pop_config.elitism,  # paper recommends population size
+        filter_length=pop_config.elitism,
         output_registers=getattr(evaluator, "output_registers", None),
     )
     final_population = engine.run(modes_tracker=modes_tracker)
 
-    # After engine.run(), save the results:
     try:
         modes_df = modes_tracker.to_dataframe()
         modes_csv_path = manager.run_dir / "modes_metrics.csv"
@@ -192,6 +194,7 @@ def main(config_path: str = "config.yaml", random_seed: Optional[int] = None):
         print(f"MODES metrics saved to: {modes_csv_path}")
     except ImportError:
         print("pandas not installed — MODES history not saved as CSV")
+
     end_time = time.time()
     elapsed_time = end_time - start_time
     
@@ -202,20 +205,17 @@ def main(config_path: str = "config.yaml", random_seed: Optional[int] = None):
         avg_time_per_gen = elapsed_time / evolution_config.max_generations
         print(f"Average time per generation: {avg_time_per_gen:.2f} seconds")
 
-    # Close evaluator
     evaluator.close()
 
-    # Get and display best agent
     best_agent = get_best_agent(final_population)
     if best_agent:
         print_best_agent_info(best_agent, final_population, evaluator, memory_cfg)
         
-        # Save best agent via manager
         best_gen = final_population.best_ever_generation or final_population.generation
         agent_path = manager.save_best_agent(best_agent, best_gen)
         print(f"\nBest agent saved to: {agent_path}")
 
-    # Generate and save fitness chart
+    # --- Fitness chart ---
     print("\nGenerating fitness chart...")
     fig = create_fitness_chart(engine)
     if fig is not None:
@@ -224,7 +224,15 @@ def main(config_path: str = "config.yaml", random_seed: Optional[int] = None):
         print(f"Fitness chart saved to: {chart_path}")
         print_evolution_summary(engine)
 
-    # Finalize experiment
+    # --- Adaptive mutation rate chart (only when feature is enabled) ---
+    if evolution_config.adaptive_mutation_rates and engine.adaptive_rate_history:
+        print("\nGenerating adaptive mutation rate chart...")
+        fig_rates = create_adaptive_rate_chart(engine)
+        if fig_rates is not None:
+            rate_chart_path = manager.save_chart(fig_rates, "adaptive_mutation_rates")
+            plt.close(fig_rates)
+            print(f"Adaptive mutation rate chart saved to: {rate_chart_path}")
+
     best_fitness = best_agent.fitness if best_agent and best_agent.fitness else 0.0
     best_gen = final_population.best_ever_generation or 0
     final_gen = final_population.generation
@@ -236,12 +244,11 @@ def main(config_path: str = "config.yaml", random_seed: Optional[int] = None):
     return best_agent
 
 
+# ---------------------------------------------------------------------------
+# Helper utilities
+# ---------------------------------------------------------------------------
+
 def get_best_agent(population):
-    """Get the best agent from the population.
-    
-    Returns:
-        Individual: The best agent (best_ever if available, otherwise best from current generation)
-    """
     if population.best_ever is not None:
         return population.best_ever
     else:
@@ -249,7 +256,6 @@ def get_best_agent(population):
 
 
 def print_best_agent_info(best_agent, population, evaluator, memory_cfg):
-    """Print detailed information about the best agent."""
     print(f"\n{'='*70}")
     print("BEST AGENT INFORMATION")
     print(f"{'='*70}")
@@ -260,7 +266,6 @@ def print_best_agent_info(best_agent, population, evaluator, memory_cfg):
     if population.best_ever is not None and best_agent.id == population.best_ever.id:
         print(f"Best ever generation: {population.best_ever_generation}")
     
-    # Get output registers for effective length
     output_registers = getattr(evaluator, "output_registers", None)
     if output_registers:
         effective_length = best_agent.get_effective_length(output_registers)
@@ -274,15 +279,11 @@ def print_best_agent_info(best_agent, population, evaluator, memory_cfg):
     print(f"{'='*70}")
 
 
+# ---------------------------------------------------------------------------
+# Fitness chart
+# ---------------------------------------------------------------------------
+
 def create_fitness_chart(engine):
-    """Create fitness chart from evolution results.
-    
-    Args:
-        engine: EvolutionEngine object containing evolution history
-        
-    Returns:
-        matplotlib Figure object, or None if no data
-    """
     if len(engine.best_agent_history) == 0:
         print("No data to plot.")
         return None
@@ -291,7 +292,6 @@ def create_fitness_chart(engine):
     fitnesses = [info.fitness for info in engine.best_agent_history]
     code_rates = [info.effective_code_rate for info in engine.best_agent_history]
 
-    # Create figure with subplots
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
     # Plot 1: Best fitness over generations
@@ -313,7 +313,7 @@ def create_fitness_chart(engine):
     ax2.set_ylim(0, 1.1)
     ax2.set_xlim(-0.5, max(generations) + 0.5)
 
-    # Plot 3: Population fitness statistics (if available)
+    # Plot 3: Population fitness statistics
     if hasattr(engine.population, 'fitness_history') and len(engine.population.fitness_history) > 0:
         ax3 = axes[1, 0]
         gen_range = range(len(engine.population.fitness_history))
@@ -349,8 +349,90 @@ def create_fitness_chart(engine):
     return fig
 
 
+# ---------------------------------------------------------------------------
+# Adaptive mutation rate chart
+# ---------------------------------------------------------------------------
+
+def create_adaptive_rate_chart(engine) -> Optional[plt.Figure]:
+    """
+    Create a chart showing per-generation population statistics and best-agent
+    values for each of the four adaptive mutation rate registers.
+
+    Layout: 2 rows × 2 columns → one subplot per rate.
+    Each subplot shows:
+      - Shaded band:  population min–max
+      - Solid line:   population mean  (with ±1 std shading)
+      - Dashed line:  best-agent rate
+    """
+    history = engine.adaptive_rate_history
+    if not history:
+        return None
+
+    generations = [s.generation for s in history]
+
+    # Colour palette (one per rate)
+    colours = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.suptitle('Adaptive Mutation Rates Across Generations',
+                 fontsize=15, fontweight='bold')
+
+    axes_flat = axes.flatten()
+
+    for i, (ax, name, colour) in enumerate(
+        zip(axes_flat, ADAPTIVE_RATE_NAMES, colours)
+    ):
+        mean_vals = [s.mean[i] for s in history]
+        std_vals  = [s.std[i]  for s in history]
+        min_vals  = [s.min[i]  for s in history]
+        max_vals  = [s.max[i]  for s in history]
+        best_vals = [s.best[i] for s in history]
+
+        mean_arr = np.array(mean_vals)
+        std_arr  = np.array(std_vals)
+
+        # Population range band (min–max)
+        ax.fill_between(
+            generations, min_vals, max_vals,
+            alpha=0.15, color=colour, label='Pop min–max',
+        )
+        # Mean ± 1 std band
+        ax.fill_between(
+            generations,
+            np.clip(mean_arr - std_arr, 0, 1),
+            np.clip(mean_arr + std_arr, 0, 1),
+            alpha=0.30, color=colour, label='Pop mean ± std',
+        )
+        # Population mean
+        ax.plot(
+            generations, mean_vals,
+            color=colour, linewidth=2, label='Pop mean',
+        )
+        # Best-agent value
+        ax.plot(
+            generations, best_vals,
+            color=colour, linewidth=2, linestyle='--',
+            marker='o', markersize=3, label='Best agent',
+        )
+
+        ax.set_xlim(generations[0], generations[-1])
+        ax.set_ylim(-0.02, 1.02)
+        ax.set_xlabel('Generation', fontsize=11)
+        ax.set_ylabel('Rate (sigmoid)', fontsize=11)
+        ax.set_title(f'Register {i + 1}: {name.replace("_", " ").title()}',
+                     fontsize=12, fontweight='bold')
+        ax.legend(fontsize=9, loc='best')
+        ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+
 def print_evolution_summary(engine):
-    """Print evolution summary statistics."""
     generations = [info.generation for info in engine.best_agent_history]
     fitnesses = [info.fitness for info in engine.best_agent_history]
     code_rates = [info.effective_code_rate for info in engine.best_agent_history]

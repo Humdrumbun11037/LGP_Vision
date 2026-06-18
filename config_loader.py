@@ -2,12 +2,16 @@
 
 import yaml
 from pathlib import Path
-from typing import Optional, Dict, Any, TYPE_CHECKING
+from typing import Optional, Dict, Any, List, TYPE_CHECKING
 
 from memory_system import MemoryConfig
 from evaluator import FlappyBirdEvaluatorConfig
 from population import PopulationConfig
-from evolution_engine import EvolutionConfig
+from evolution_engine import (
+    EvolutionConfig,
+    ADAPTIVE_RATE_BASE_INDEX,
+    N_ADAPTIVE_RATE_REGISTERS,
+)
 
 if TYPE_CHECKING:
     from experiment_manager import ExperimentManager
@@ -56,14 +60,12 @@ def create_memory_config(config: Dict[str, Any]) -> MemoryConfig:
     """
     mem_cfg = config.get('memory', {})
     
-    # Validate required fields
     required_fields = ['n_scalar', 'n_vector', 'n_matrix', 'n_obs_scalar', 
                        'n_obs_vector', 'n_obs_matrix', 'vector_size', 'matrix_shape']
     missing = [field for field in required_fields if field not in mem_cfg]
     if missing:
         raise ValueError(f"Missing required memory configuration fields: {missing}")
     
-    # Convert matrix_shape from list to tuple
     matrix_shape = mem_cfg.get('matrix_shape', [37, 37])
     if isinstance(matrix_shape, list):
         if len(matrix_shape) != 2:
@@ -85,44 +87,26 @@ def create_memory_config(config: Dict[str, Any]) -> MemoryConfig:
 
 
 def create_evaluator_config(config: Dict[str, Any]) -> FlappyBirdEvaluatorConfig:
-    """Create FlappyBirdEvaluatorConfig from YAML config.
-    
-    Args:
-        config: Dictionary containing configuration sections
-        
-    Returns:
-        FlappyBirdEvaluatorConfig object
-        
-    Raises:
-        ValueError: If required fields are missing or invalid
-    """
+    """Create FlappyBirdEvaluatorConfig from YAML config."""
     eval_cfg = config.get('evaluator', {})
     
-    # Handle headless mode parameter (takes precedence over render_mode if render_mode is null)
-    headless = eval_cfg.get('headless', True)  # Default to headless for speed
+    headless = eval_cfg.get('headless', True)
     
-    # Handle null render_mode (convert to None)
     render_mode = eval_cfg.get('render_mode')
     if render_mode == 'null' or render_mode is None:
-        # If render_mode is not specified, use headless flag to determine it
         render_mode = "rgb_array" if headless else "human"
-    # If render_mode is explicitly set, use it (headless flag is ignored)
     
-    # Handle null n_jobs (convert to None)
     n_jobs = eval_cfg.get('n_jobs')
     if n_jobs == 'null' or n_jobs is None:
         n_jobs = None
     elif isinstance(n_jobs, str) and n_jobs.lower() == 'null':
         n_jobs = None
     
-    # Always use random_seed from global config for rng_seed (syncs with command-line seed)
     rng_seed = config.get('random_seed')
     
-    # Get output_register and set output_registers if not explicitly provided
     output_register = eval_cfg.get('output_register', 0)
     output_registers = eval_cfg.get('output_registers')
     if output_registers is None:
-        # Derive from output_register
         from memory_system import MemoryType
         output_registers = [(MemoryType.SCALAR, output_register)]
     
@@ -140,9 +124,7 @@ def create_evaluator_config(config: Dict[str, Any]) -> FlappyBirdEvaluatorConfig
         feature_vector_size=eval_cfg.get('feature_vector_size', 64),
         frame_stack_size=eval_cfg.get('frame_stack_size', 1),
         action_repeat=eval_cfg.get('action_repeat', 1),
-        # Quantized strategy parameters
         quantized_final_size=eval_cfg.get('quantized_final_size', 21),
-        # Trinary strategy parameters
         trinary_crop_bottom=eval_cfg.get('trinary_crop_bottom', 100),
         trinary_resize_factor=eval_cfg.get('trinary_resize_factor', 0.03),
         trinary_final_size=eval_cfg.get('trinary_final_size', 21),
@@ -159,31 +141,19 @@ def create_evaluator_config(config: Dict[str, Any]) -> FlappyBirdEvaluatorConfig
         trinary_pipe_v_min=eval_cfg.get('trinary_pipe_v_min', 40),
         trinary_pipe_v_max=eval_cfg.get('trinary_pipe_v_max', 255),
         n_jobs=n_jobs,
-        output_registers=output_registers,  # Set output_registers explicitly
+        output_registers=output_registers,
     )
 
 
 def create_population_config(config: Dict[str, Any]) -> PopulationConfig:
-    """Create PopulationConfig from YAML config.
-    
-    Args:
-        config: Dictionary containing configuration sections
-        
-    Returns:
-        PopulationConfig object
-        
-    Raises:
-        ValueError: If required fields are missing or invalid
-    """
+    """Create PopulationConfig from YAML config."""
     pop_cfg = config.get('population', {})
     
-    # Validate required fields
     if 'size' not in pop_cfg:
         raise ValueError("Missing required population configuration field: size")
     if 'program_length' not in pop_cfg:
         raise ValueError("Missing required population configuration field: program_length")
     
-    # Convert program_length from list to tuple
     program_length = pop_cfg.get('program_length', [1, 10])
     if isinstance(program_length, list):
         if len(program_length) != 2:
@@ -204,26 +174,15 @@ def create_evolution_config(
     config: Dict[str, Any],
     manager: Optional['ExperimentManager'] = None,
 ) -> EvolutionConfig:
-    """Create EvolutionConfig from YAML config.
-    
-    Args:
-        config: Dictionary containing configuration sections
-        manager: Optional ExperimentManager to provide output paths
-        
-    Returns:
-        EvolutionConfig object
-    """
+    """Create EvolutionConfig from YAML config."""
     evo_cfg = config.get('evolution', {})
     exp_cfg = config.get('experiment', {})
     
-    # Get checkpoint and stats paths from manager if provided
     if manager is not None:
-        # Use manager's paths
         checkpoint_dir = str(manager.checkpoints_dir)
         stats_log_path = str(manager.get_stats_csv_path())
         checkpoint_every = manager.checkpoint_every
     else:
-        # No manager - disable checkpoints and stats logging
         checkpoint_dir = None
         stats_log_path = None
         checkpoint_every = exp_cfg.get('checkpoint_every')
@@ -237,18 +196,32 @@ def create_evolution_config(
         checkpoint_dir=checkpoint_dir,
         checkpoint_every=checkpoint_every,
         stats_log_path=stats_log_path,
+        adaptive_mutation_rates=evo_cfg.get('adaptive_mutation_rates', False),
     )
 
 
-def get_operations_config(config: Dict[str, Any]) -> Dict[str, bool]:
-    """Get operations configuration.
-    
-    Args:
-        config: Dictionary containing configuration sections
-        
-    Returns:
-        Dictionary with operation set boolean flags (checked in order, first true wins)
+def get_protected_scalar_registers(config: Dict[str, Any]) -> List[int]:
     """
+    Return the list of scalar destination register indices that must not be
+    written to during random instruction generation.
+
+    When ``adaptive_mutation_rates`` is enabled, registers
+    ADAPTIVE_RATE_BASE_INDEX … ADAPTIVE_RATE_BASE_INDEX + N_ADAPTIVE_RATE_REGISTERS - 1
+    are reserved for evolved per-individual mutation rates and must never be
+    overwritten by randomly generated instructions.
+
+    Returns an empty list when the feature is disabled.
+    """
+    evo_cfg = config.get('evolution', {})
+    if not evo_cfg.get('adaptive_mutation_rates', False):
+        return []
+
+    return list(range(ADAPTIVE_RATE_BASE_INDEX,
+                      ADAPTIVE_RATE_BASE_INDEX + N_ADAPTIVE_RATE_REGISTERS))
+
+
+def get_operations_config(config: Dict[str, Any]) -> Dict[str, bool]:
+    """Get operations configuration."""
     ops_cfg = config.get('operations', {})
     return {
         'use_feature_vector_ops': ops_cfg.get('use_feature_vector_ops', False),
@@ -261,17 +234,9 @@ def get_operations_config(config: Dict[str, Any]) -> Dict[str, bool]:
 
 
 def get_experiment_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Get experiment configuration.
-    
-    Args:
-        config: Dictionary containing configuration sections
-        
-    Returns:
-        Dictionary with experiment settings for ExperimentManager
-    """
+    """Get experiment configuration."""
     exp_cfg = config.get('experiment', {})
     
-    # Handle null values
     name = exp_cfg.get('name')
     if name == 'null':
         name = None
