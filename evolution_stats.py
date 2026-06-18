@@ -33,19 +33,20 @@ class EvolutionStatsDisplay:
         - OR manually: population, best_agent_history, memory_cfg, output_registers
         """
         if engine is not None:
-            # Extract from engine
             self.population = engine.population
             self.best_agent_history = engine.best_agent_history
             self.memory_cfg = engine.population.memory_config
             self.output_registers = getattr(engine.evaluator, 'output_registers', None)
+            self.adaptive_rate_history = engine.adaptive_rate_history
+            self.adaptive_mutation_rates = engine.config.adaptive_mutation_rates
         else:
-            # Manual setup
             self.population = population
             self.best_agent_history = best_agent_history or []
             self.memory_cfg = memory_cfg
             self.output_registers = output_registers
+            self.adaptive_rate_history = []
+            self.adaptive_mutation_rates = False
         
-        # Get best agent
         if self.population is not None:
             self.best_agent = self.population.best_ever or self.population.get_best()
         else:
@@ -65,6 +66,8 @@ class EvolutionStatsDisplay:
         if show_graphs:
             self._plot_fitness_evolution()
             self._plot_program_length_evolution()
+            if self.adaptive_mutation_rates and self.adaptive_rate_history:
+                self._plot_adaptive_rates()
         
         if show_code and self.best_agent is not None:
             self._print_best_agent_code()
@@ -79,7 +82,6 @@ class EvolutionStatsDisplay:
             print("⚠️  No population data available")
             return
         
-        # Current generation stats
         min_fit, mean_fit, max_fit, std_fit = self.population.compute_statistics()
         
         print(f"\n📊 Current Generation ({self.population.generation}):")
@@ -89,7 +91,6 @@ class EvolutionStatsDisplay:
         print(f"   Max fitness:   {max_fit:.4f}")
         print(f"   Std fitness:   {std_fit:.4f}")
         
-        # Best agent info
         if self.best_agent is not None and self.best_agent.fitness is not None:
             print(f"\n🏆 Best Agent:")
             print(f"   Fitness:      {self.best_agent.fitness:.4f}")
@@ -99,13 +100,20 @@ class EvolutionStatsDisplay:
             if self.best_agent.parent_ids:
                 print(f"   Parent IDs:   {self.best_agent.parent_ids}")
             
-            # Best ever info
             if self.population.best_ever is not None:
                 print(f"\n⭐ Best Ever:")
                 print(f"   Fitness:      {self.population.best_ever.fitness:.4f}")
                 print(f"   Generation:   {self.population.best_ever_generation}")
+
+            # Print current adaptive rates of the best agent
+            if self.adaptive_mutation_rates and self.adaptive_rate_history:
+                from evolution_engine import ADAPTIVE_RATE_NAMES
+                stats = self.adaptive_rate_history[-1]
+                print(f"\n🧬 Best Agent Adaptive Mutation Rates (sigmoid-mapped):")
+                for i, name in enumerate(ADAPTIVE_RATE_NAMES):
+                    print(f"   {name}: {stats.best[i]:.4f}  "
+                          f"(pop mean={stats.mean[i]:.4f} ± {stats.std[i]:.4f})")
         
-        # Evolution progress
         if len(self.best_agent_history) > 1:
             initial_fitness = self.best_agent_history[0].fitness
             final_fitness = self.best_agent_history[-1].fitness
@@ -126,34 +134,27 @@ class EvolutionStatsDisplay:
             print("⚠️  No evolution history available for plotting")
             return
         
-        # Extract data
         generations = [info.generation for info in self.best_agent_history]
         best_fitnesses = [info.fitness for info in self.best_agent_history]
         
-        # Get population statistics if available
         min_fits = []
         mean_fits = []
         max_fits = []
         
         if self.population is not None and hasattr(self.population, 'fitness_history') and len(self.population.fitness_history) > 0:
-            # Use actual population fitness history
             min_fits = [stats[0] for stats in self.population.fitness_history]
             mean_fits = [stats[1] for stats in self.population.fitness_history]
             max_fits = [stats[2] for stats in self.population.fitness_history]
-            # Align generations with fitness_history indices
             gen_range = list(range(len(self.population.fitness_history)))
         else:
-            # Fallback: use best fitness as proxy
             min_fits = [min(best_fitnesses)] * len(generations)
             mean_fits = best_fitnesses
             max_fits = best_fitnesses
             gen_range = generations
         
-        # Create figure
         fig, axes = plt.subplots(1, 2, figsize=(16, 6))
         fig.suptitle('Fitness Evolution Across Generations', fontsize=14, fontweight='bold')
         
-        # Plot 1: Fitness Statistics
         ax1 = axes[0]
         ax1.plot(gen_range, min_fits, 'g-', label='Min Fitness', linewidth=1.5, alpha=0.6, marker='o', markersize=3)
         ax1.plot(gen_range, mean_fits, 'b-', label='Mean Fitness', linewidth=2, marker='s', markersize=4)
@@ -162,7 +163,6 @@ class EvolutionStatsDisplay:
                 label='Best Agent Fitness', zorder=4)
         ax1.fill_between(gen_range, min_fits, max_fits, alpha=0.15, color='gray', label='Population Range')
         
-        # Highlight best ever
         if self.population is not None and self.population.best_ever is not None:
             best_ever_gen = self.population.best_ever_generation
             best_ever_fit = self.population.best_ever.fitness
@@ -176,7 +176,6 @@ class EvolutionStatsDisplay:
         ax1.legend(loc='best', fontsize=9)
         ax1.grid(True, alpha=0.3)
         
-        # Plot 2: Best Agent Fitness Only
         ax2 = axes[1]
         ax2.plot(generations, best_fitnesses, 'purple', linewidth=3, marker='o', markersize=6, 
                 label='Best Agent Fitness')
@@ -218,7 +217,58 @@ class EvolutionStatsDisplay:
         
         plt.tight_layout()
         plt.show()
-    
+
+    def _plot_adaptive_rates(self):
+        """
+        Plot population statistics and best-agent values for each adaptive
+        mutation rate register across generations.
+
+        Layout: 2 rows × 2 columns, one subplot per rate register.
+        """
+        if not self.adaptive_rate_history:
+            return
+
+        from evolution_engine import ADAPTIVE_RATE_NAMES, N_ADAPTIVE_RATE_REGISTERS
+
+        history = self.adaptive_rate_history
+        generations = [s.generation for s in history]
+        colours = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+        fig.suptitle('Adaptive Mutation Rates Across Generations',
+                     fontsize=15, fontweight='bold')
+
+        for i, (ax, name, colour) in enumerate(
+            zip(axes.flatten(), ADAPTIVE_RATE_NAMES, colours)
+        ):
+            mean_vals = np.array([s.mean[i] for s in history])
+            std_vals  = np.array([s.std[i]  for s in history])
+            min_vals  = [s.min[i]  for s in history]
+            max_vals  = [s.max[i]  for s in history]
+            best_vals = [s.best[i] for s in history]
+
+            ax.fill_between(generations, min_vals, max_vals,
+                            alpha=0.15, color=colour, label='Pop min–max')
+            ax.fill_between(generations,
+                            np.clip(mean_vals - std_vals, 0, 1),
+                            np.clip(mean_vals + std_vals, 0, 1),
+                            alpha=0.30, color=colour, label='Pop mean ± std')
+            ax.plot(generations, mean_vals, color=colour, linewidth=2, label='Pop mean')
+            ax.plot(generations, best_vals, color=colour, linewidth=2, linestyle='--',
+                    marker='o', markersize=3, label='Best agent')
+
+            ax.set_xlim(generations[0], generations[-1])
+            ax.set_ylim(-0.02, 1.02)
+            ax.set_xlabel('Generation', fontsize=11)
+            ax.set_ylabel('Rate (sigmoid)', fontsize=11)
+            ax.set_title(f'Register {i + 1}: {name.replace("_", " ").title()}',
+                         fontsize=12, fontweight='bold')
+            ax.legend(fontsize=9, loc='best')
+            ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.show()
+
     def _print_best_agent_code(self):
         """Print the best agent's code."""
         if self.best_agent is None:
@@ -245,16 +295,32 @@ class EvolutionStatsDisplay:
             for i, instr in enumerate(self.best_agent.program.instructions):
                 print(f"  {i:3d}: {instr}")
         
-        # Show evolved constants
         print(f"\n{'='*80}")
         print("EVOLVED CONSTANTS (Working Scalars)")
         print("=" * 80)
+
+        if self.adaptive_mutation_rates:
+            from evolution_engine import (
+                ADAPTIVE_RATE_BASE_INDEX, N_ADAPTIVE_RATE_REGISTERS,
+                ADAPTIVE_RATE_NAMES, _read_adaptive_rates,
+            )
+            rates = _read_adaptive_rates(self.best_agent)
+
         if self.best_agent.memory.n_scalar > 0:
-            for i in range(min(self.best_agent.memory.n_scalar, 20)):  # Show first 20
+            for i in range(min(self.best_agent.memory.n_scalar, 20)):
                 val = self.best_agent.memory.read_scalar(i)
-                marker = " ← OUTPUT" if (self.output_registers and 
-                                        any(reg[1] == i for reg in self.output_registers)) else ""
-                print(f"  scalar[{i:2d}] = {val:10.6f}{marker}")
+                markers = []
+                if self.output_registers and any(reg[1] == i for reg in self.output_registers):
+                    markers.append("← OUTPUT")
+                if self.adaptive_mutation_rates:
+                    offset = i - ADAPTIVE_RATE_BASE_INDEX
+                    if 0 <= offset < N_ADAPTIVE_RATE_REGISTERS:
+                        sigmoid_val = rates[offset]
+                        markers.append(
+                            f"← ADAPTIVE {ADAPTIVE_RATE_NAMES[offset]} "
+                            f"(raw={val:.4f}, σ={sigmoid_val:.4f})"
+                        )
+                marker_str = "  " + "  ".join(markers) if markers else ""
+                print(f"  scalar[{i:2d}] = {val:10.6f}{marker_str}")
         
         print("=" * 80)
-
