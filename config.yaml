@@ -73,13 +73,13 @@ evolution:
   constant_mutation_rate: 0.1 # Probability of mutating constants (0.0-1.0)
   crossover_threshold: 0.9     # Probability threshold for crossover (0.0-1.0)
   verbose: true               # Print detailed progress information
+  swap_mutation: true
   # Adaptive mutation rates: if true, scalar registers 1-4 (just after the output
   # register at index 0) encode evolved per-individual mutation rates [0, 1].
   # Register 1 = micro-mutation rate, 2 = add-instruction rate,
-  # 3 = delete-instruction rate, 4 = crossover threshold.
+  # 3 = delete-instruction rate, 4 = swap-mutation rate.
   # These registers are protected during random initialisation (no instruction
   # will write to them), so they start as random evolvable constants and are
-  # shaped purely by selection.
   adaptive_mutation_rates: true
 
 # Operations Configuration

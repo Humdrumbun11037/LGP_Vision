@@ -131,14 +131,14 @@ class GeneticOperators:
 
         return instruction
 
-    def macro_mutate(self,instruction: Instruction, rng = None):
+    def macro_mutate(self, instruction: Instruction, rng=None):
         """Return a brand new random instruction (macro mutation)."""
         if rng is None:
             rng = np.random.default_rng()
         instruction = self.instruction_set.generate_random_instruction(rng)
         return instruction
 
-    def add_instruction_mutate(self, program, index, rng = None):
+    def add_instruction_mutate(self, program, index, rng=None):
         """Insert a new instruction right after the supplied index."""
         if rng is None:
             rng = np.random.default_rng()
@@ -155,14 +155,58 @@ class GeneticOperators:
         program.instructions.pop(remove_at)
         return program
 
-    def mutate_program(self, program, threshold, rng = None, max_length = None):
-        """Walk every instruction and mutate when random() <= threshold."""
+    def swap_instruction_mutate(self, program, index, rng=None):
+        """Swap the instruction at index with another randomly chosen instruction.
+
+        If the program has fewer than 2 instructions the call is a no-op.
+
+        Args:
+            program: Program whose instruction list will be mutated in-place.
+            index: Position of one of the two instructions to swap.
+            rng: Optional random number generator.
+
+        Returns:
+            The program (mutated in-place).
+        """
+        if len(program.instructions) < 2:
+            return program
         if rng is None:
             rng = np.random.default_rng()
+        # Pick a second index that is different from the first
+        candidates = [i for i in range(len(program.instructions)) if i != index]
+        other = int(rng.choice(candidates))
+        program.instructions[index], program.instructions[other] = (
+            program.instructions[other],
+            program.instructions[index],
+        )
+        return program
+
+    def mutate_program(
+        self,
+        program,
+        threshold,
+        rng=None,
+        max_length=None,
+        swap_mutation: bool = False,
+    ):
+        """Walk every instruction and mutate when random() <= threshold.
+
+        Args:
+            program: Program to mutate in-place.
+            threshold: Per-instruction probability of triggering a mutation.
+            rng: Optional random number generator.
+            max_length: Maximum allowed program length (caps add mutations).
+            swap_mutation: If True, include instruction-swap as a possible
+                           mutation type (adds a 5th option alongside micro,
+                           macro, add, and delete).
+        """
+        if rng is None:
+            rng = np.random.default_rng()
+        n_mutation_types = 5 if swap_mutation else 4
         i = 0
         while i < len(program.instructions):
             if rng.random() <= threshold:
-                mutation_type = int(rng.integers(0,4))
+                mutation_type = int(rng.integers(0, n_mutation_types))
                 if mutation_type == 0:
                     self.micro_mutate(program.instructions[i], rng)
                 elif mutation_type == 1:
@@ -170,16 +214,18 @@ class GeneticOperators:
                 elif mutation_type == 2:
                     if max_length is None or len(program.instructions) < max_length:
                         self.add_instruction_mutate(program, i, rng)
-                else:
+                elif mutation_type == 3:
                     self.delete_instruction_mutate(program, i)
                     i -= 1
+                else:  # mutation_type == 4 (swap)
+                    self.swap_instruction_mutate(program, i, rng)
             i += 1
         if len(program.instructions) == 0:
             # Guarantee program never becomes empty.
             program.instructions.append(self.instruction_set.generate_random_instruction(rng))
         return program
 
-    def one_point_crossover(self, parent1: Program, parent2: Program, rng= None):
+    def one_point_crossover(self, parent1: Program, parent2: Program, rng=None):
         if rng is None:
             rng = np.random.default_rng()
         p1 = parent1.copy()
@@ -194,8 +240,7 @@ class GeneticOperators:
         c2 = Program(c2_instrs)
         return c1, c2
 
-
-    def two_point_crossover(self, parent1: Program, parent2: Program, rng= None):
+    def two_point_crossover(self, parent1: Program, parent2: Program, rng=None):
         if rng is None:
             rng = np.random.default_rng()
         p1 = parent1.copy()
@@ -212,8 +257,9 @@ class GeneticOperators:
         c2_instrs = p2.instructions[:c21] + p1.instructions[c11:c12] + p2.instructions[c22:]
         c1 = Program(c1_instrs)
         c2 = Program(c2_instrs)
-        return c1, c2 
-    # roughly 161 Times speed up over naive 
+        return c1, c2
+
+    # roughly 161 Times speed up over naive
     def mutate_constants(self, memory: MemoryBank, rng=None):
         if rng is None:
             rng = np.random.default_rng()
@@ -229,6 +275,7 @@ class GeneticOperators:
             factors = rng.uniform(0.5, 2.0, size=memory.matrices.shape)
             signs = np.where(rng.random(memory.matrices.shape) < 0.1, -1.0, 1.0)
             memory.matrices *= factors * signs
+
     def mutate_constants_in_place(self, memory: MemoryBank, rng=None):
         if rng is None:
             rng = np.random.default_rng()
@@ -273,19 +320,17 @@ class GeneticOperators:
                     if dis2(0.0, 1.0) <= 0.1:
                         mat[r, c] *= -1
 
-    def crossover(self, parent1: Program, parent2: Program, threshold =0.9,rng = None):
+    def crossover(self, parent1: Program, parent2: Program, threshold=0.9, rng=None):
         if rng is None:
             rng = np.random.default_rng()
-        slc = int(rng.integers(0,2))
+        slc = int(rng.integers(0, 2))
         if rng.random() > threshold:
             return parent1.copy(), parent2.copy()
         if slc == 0:
-            c1,c2 = self.one_point_crossover(parent1,parent2,rng)
+            c1, c2 = self.one_point_crossover(parent1, parent2, rng)
         else:
-            c1, c2 = self.two_point_crossover(parent1, parent2,rng)
+            c1, c2 = self.two_point_crossover(parent1, parent2, rng)
         return c1, c2
-
-
 
 
 if __name__ == "__main__":
@@ -298,7 +343,7 @@ if __name__ == "__main__":
         n_matrix=8,
         n_obs_scalar=0,
         n_obs_vector=0,
-        n_obs_matrix=1,  # Need at least 1 observation matrix for matrix observation access
+        n_obs_matrix=1,
         vector_size=5,
         matrix_shape=(9, 9),
     )
@@ -329,14 +374,6 @@ if __name__ == "__main__":
         print("Valid?:", instruction.is_valid())
         print()
 
-    print("--- Macro Mutation Samples ---")
-    for _ in range(3):
-        print("old Instruction:", instruction.to_resolved_str(memory_config))
-        new_instr = ops.macro_mutate(instruction)
-        print("New instruction:", new_instr.to_resolved_str(memory_config))
-        print("Valid?:", new_instr.is_valid())
-        print()
-
     program = Program([
         Instruction(
             operation=ScalarAddOp(),
@@ -350,43 +387,14 @@ if __name__ == "__main__":
         )
     ])
 
-    print("--- Program Mutation Samples ---")
-    for _ in range(10):
-        print("Program before:")
-        for idx, instr in enumerate(program.instructions):
-            print(f"  {idx}: {instr.to_resolved_str(memory_config)}")
-        ops.mutate_program(program, threshold=1.0)
-        print("Program after:")
-        for idx, instr in enumerate(program.instructions):
-            print(f"  {idx}: {instr.to_resolved_str(memory_config)}")
-        print()
-
-    # Benchmark constant mutation implementations
-    import time
-    rng = np.random.default_rng(123)
-    big_memory = MemoryBank(
-        n_scalar=2048,
-        n_vector=256,
-        n_matrix=64,
-        n_obs_scalar=0,
-        n_obs_vector=0,
-        n_obs_matrix=0,
-        vector_size=64,
-        matrix_shape=(32, 32),
-    )
-
-    vec_memory = big_memory.copy()
-    naive_memory = big_memory.copy()
-
-    start = time.perf_counter()
-    ops.mutate_constants_in_place(vec_memory, rng)
-    vec_time = time.perf_counter() - start
-
-    start = time.perf_counter()
-    ops.mutate_constants_naive(naive_memory, rng)
-    naive_time = time.perf_counter() - start
-
-    print("Vectorized constant mutation time: %.6f s" % vec_time)
-    print("Naive constant mutation time:      %.6f s" % naive_time)
-    if vec_time > 0:
-        print("Speedup (naive / vectorized):      %.2fx" % (naive_time / vec_time)) 
+    print("--- Swap Mutation Test ---")
+    from program import Program
+    rng = np.random.default_rng(42)
+    test_program = instr_set.generate_random_program(5, rng)
+    print("Before swap:")
+    for idx, instr in enumerate(test_program.instructions):
+        print(f"  {idx}: {instr.to_resolved_str(memory_config)}")
+    ops.swap_instruction_mutate(test_program, 0, rng)
+    print("After swap (position 0 with another):")
+    for idx, instr in enumerate(test_program.instructions):
+        print(f"  {idx}: {instr.to_resolved_str(memory_config)}")

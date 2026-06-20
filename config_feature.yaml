@@ -71,6 +71,8 @@ evolution:
   constant_mutation_rate: 0.1 # Probability of mutating constants (0.0-1.0)
   crossover_threshold: 0.9     # Probability threshold for crossover (0.0-1.0)
   verbose: true               # Print detailed progress information
+  swap_mutation: false
+  adaptive_mutation_rates: false
 
 # Operations Configuration
 # Which operation sets to include (checked in order, first true wins)

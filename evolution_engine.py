@@ -25,12 +25,15 @@ from evaluator import FitnessEvaluator
 N_ADAPTIVE_RATE_REGISTERS = 4
 ADAPTIVE_RATE_BASE_INDEX = 1   # first register index (output reg is 0)
 
-# Semantic meaning of each adaptive rate register (for documentation / plots)
+# Semantic meaning of each adaptive rate register (for documentation / plots).
+# Register 4 encodes the swap-mutation rate (probability of swapping two
+# instructions).  Crossover is NOT adaptive — it always uses the global
+# config threshold so that its behaviour remains stable and comparable.
 ADAPTIVE_RATE_NAMES = [
     "micro_mutation",       # register 1
     "add_instruction",      # register 2
     "delete_instruction",   # register 3
-    "crossover_threshold",  # register 4
+    "swap_mutation",        # register 4
 ]
 
 
@@ -57,12 +60,14 @@ class EvolutionConfig:
     crossover_threshold: float = 0.9
     verbose: bool = False
     # Checkpoint settings (managed by ExperimentManager)
-    checkpoint_dir: Optional[str] = None  # Directory for checkpoints
-    checkpoint_every: Optional[int] = None  # Save every N generations (None = only on improvement)
+    checkpoint_dir: Optional[str] = None
+    checkpoint_every: Optional[int] = None
     # Stats logging (managed by ExperimentManager)
-    stats_log_path: Optional[str] = None  # Full path to stats CSV file
-    # Adaptive mutation rates
-    adaptive_mutation_rates: bool = False  # Use per-individual evolved mutation rates
+    stats_log_path: Optional[str] = None
+    # Adaptive mutation rates (registers 1-4)
+    adaptive_mutation_rates: bool = False
+    # Swap mutation: swap the positions of two random instructions
+    swap_mutation: bool = False
 
     def __post_init__(self) -> None:
         if self.max_generations <= 0:
@@ -91,7 +96,7 @@ class AdaptiveRateStats:
     generation: int
     # Each field is a list of 4 values (one per rate), ordered by
     # ADAPTIVE_RATE_NAMES: [micro_mutation, add_instruction,
-    #                        delete_instruction, crossover_threshold]
+    #                        delete_instruction, swap_mutation]
     mean: List[float] = field(default_factory=lambda: [0.0] * N_ADAPTIVE_RATE_REGISTERS)
     std: List[float] = field(default_factory=lambda: [0.0] * N_ADAPTIVE_RATE_REGISTERS)
     min: List[float] = field(default_factory=lambda: [0.0] * N_ADAPTIVE_RATE_REGISTERS)
@@ -115,13 +120,9 @@ class EvolutionEngine:
         self.evaluator = evaluator
         self.config = config
         self.rng = rng or np.random.default_rng()
-        # Track best agent info per generation
         self.best_agent_history: List[BestAgentInfo] = []
-        # Track adaptive rate population statistics per generation
         self.adaptive_rate_history: List[AdaptiveRateStats] = []
-        # Track best fitness ever for checkpoint saving
         self.best_fitness_ever: Optional[float] = None
-        # CSV statistics logging
         self._stats_file_path: Optional[Path] = None
         if self.config.stats_log_path is not None:
             self._init_stats_logging()
@@ -136,7 +137,7 @@ class EvolutionEngine:
             n_jobs = self.evaluator.config.n_jobs
             self.population.evaluate_all(self.evaluator, verbose=self.config.verbose, n_jobs=n_jobs)
 
-            # Track best-ever Individual (population is evaluated)
+            # Track best-ever Individual
             current_best = self.population.get_best()
             
             if current_best.fitness is not None:
@@ -148,7 +149,6 @@ class EvolutionEngine:
                         action = "Initialized" if was_none else "Updated"
                         print(f"  → {action} best_ever (fitness: {current_best.fitness:.4f}, gen: {gen})")
         
-            # Record statistics and checkpoints
             self.population.record_statistics()
             self._record_best_agent(gen)
             if self.config.adaptive_mutation_rates:
@@ -172,40 +172,42 @@ class EvolutionEngine:
                     print(f"  Adaptive rates (pop mean±std): {', '.join(parts)}")
 
             if gen < self.config.max_generations - 1:
-                # --- produce next generation ---
                 elites = self.population.get_elites()
                 offspring = elites
                 
                 while len(offspring) < self.population.config.size:
                     parent1, parent2 = self.population.tournament_selection(3, num_winners=2)
 
-                    # Determine per-parent mutation / crossover rates
+                    # Crossover always uses the global config threshold — it is
+                    # NOT one of the adaptive mutation rate registers.
+                    crossover_threshold = self.config.crossover_threshold
+
+                    # Determine per-parent structural mutation rates.
                     if self.config.adaptive_mutation_rates:
                         rates1 = _read_adaptive_rates(parent1)
                         rates2 = _read_adaptive_rates(parent2)
-                        # Use average of the two parents for the shared crossover
-                        # threshold so neither parent dominates.
-                        micro_mut1, add_rate1, del_rate1, xover1 = rates1
-                        micro_mut2, add_rate2, del_rate2, xover2 = rates2
-                        crossover_threshold = (xover1 + xover2) / 2.0
+                        micro_mut1, add_rate1, del_rate1, swap_rate1 = rates1
+                        micro_mut2, add_rate2, del_rate2, swap_rate2 = rates2
                     else:
                         micro_mut1 = micro_mut2 = self.config.mutation_threshold
                         add_rate1 = add_rate2 = self.config.mutation_threshold
                         del_rate1 = del_rate2 = self.config.mutation_threshold
-                        crossover_threshold = self.config.crossover_threshold
+                        # Swap rate falls back to the global mutation_threshold when
+                        # adaptive rates are off; the swap_mutation toggle controls
+                        # whether the operator is used at all.
+                        swap_rate1 = swap_rate2 = self.config.mutation_threshold
 
                     child_program_1, child_program_2 = self.operators.crossover(
                         parent1.program, parent2.program, crossover_threshold, self.rng
                     )
 
-                    # Mutate child programs using (potentially adaptive) rates
                     if self.config.adaptive_mutation_rates:
                         self._mutate_program_adaptive(
-                            child_program_1, micro_mut1, add_rate1, del_rate1,
+                            child_program_1, micro_mut1, add_rate1, del_rate1, swap_rate1,
                             self.population.config.max_program_length,
                         )
                         self._mutate_program_adaptive(
-                            child_program_2, micro_mut2, add_rate2, del_rate2,
+                            child_program_2, micro_mut2, add_rate2, del_rate2, swap_rate2,
                             self.population.config.max_program_length,
                         )
                     else:
@@ -214,20 +216,20 @@ class EvolutionEngine:
                             self.config.mutation_threshold,
                             self.rng,
                             max_length=self.population.config.max_program_length,
+                            swap_mutation=self.config.swap_mutation,
                         )
                         self.operators.mutate_program(
                             child_program_2,
                             self.config.mutation_threshold,
                             self.rng,
                             max_length=self.population.config.max_program_length,
+                            swap_mutation=self.config.swap_mutation,
                         )
                 
                     if self.population.config.max_program_length is not None:
                         child_program_1.max_program_length = self.population.config.max_program_length
                         child_program_2.max_program_length = self.population.config.max_program_length
 
-                    # Create children inheriting parents' memory (and thus mutation rate
-                    # registers), then mutate constants normally.
                     child1 = parent1.create_offspring(parent_ids=(parent1.id, parent2.id))
                     child1.program = child_program_1
                     
@@ -262,17 +264,20 @@ class EvolutionEngine:
         micro_mut_rate: float,
         add_rate: float,
         del_rate: float,
+        swap_rate: float,
         max_length: Optional[int],
     ) -> None:
         """
-        Walk every instruction and apply mutation operators using per-individual
-        adaptive rates instead of the global config thresholds.
+        Apply mutation operators using per-individual adaptive rates.
+
+        Crossover is handled before this call and is NOT adaptive.
 
         Mutation probabilities per instruction:
-          - micro_mut_rate  → apply micro-mutation (alter one field of the instruction)
+          - micro_mut_rate  → apply micro-mutation
           - add_rate        → insert a new random instruction after current position
           - del_rate        → delete the current instruction
-        These are applied in separate passes to keep semantics clean.
+          - swap_rate       → swap current instruction with another random one
+                             (only applied when config.swap_mutation is True)
         """
         rng = self.rng
 
@@ -281,7 +286,7 @@ class EvolutionEngine:
             if rng.random() < micro_mut_rate:
                 self.operators.micro_mutate(instr, rng)
 
-        # --- structural mutation pass (add / delete) ---
+        # --- structural mutation pass (add / delete / swap) ---
         i = 0
         while i < len(program.instructions):
             if rng.random() < add_rate:
@@ -291,6 +296,12 @@ class EvolutionEngine:
             if i < len(program.instructions) and rng.random() < del_rate:
                 self.operators.delete_instruction_mutate(program, i)
                 i -= 1
+            if (
+                self.config.swap_mutation
+                and i < len(program.instructions)
+                and rng.random() < swap_rate
+            ):
+                self.operators.swap_instruction_mutate(program, i, rng)
             i += 1
 
         if len(program.instructions) == 0:
@@ -376,7 +387,6 @@ class EvolutionEngine:
         self._stats_file_path = Path(self.config.stats_log_path)
         self._stats_file_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Build adaptive rate column names
         adaptive_cols = []
         if self.config.adaptive_mutation_rates:
             for name in ADAPTIVE_RATE_NAMES:
@@ -461,7 +471,6 @@ class EvolutionEngine:
                 else None
             )
 
-            # Adaptive rate columns
             adaptive_vals = []
             if self.config.adaptive_mutation_rates and self.adaptive_rate_history:
                 rate_stats = self.adaptive_rate_history[-1]
@@ -498,7 +507,6 @@ class EvolutionEngine:
     # ------------------------------------------------------------------
 
     def _check_and_save_checkpoint(self, generation: int) -> None:
-        """Check if checkpoint should be saved and save if needed."""
         if self.config.checkpoint_dir is None:
             return
         
@@ -524,7 +532,6 @@ class EvolutionEngine:
             self._save_checkpoint(generation, best_agent.fitness)
     
     def _save_checkpoint(self, generation: int, fitness: float) -> None:
-        """Save the population to a checkpoint file with generation number."""
         checkpoint_dir = Path(self.config.checkpoint_dir)
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         
@@ -561,7 +568,6 @@ class EvolutionEngine:
     
     @staticmethod
     def load_checkpoint(checkpoint_path: str) -> dict:
-        """Load a checkpoint file and return the saved data."""
         checkpoint_path = Path(checkpoint_path)
         if not checkpoint_path.exists():
             raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
@@ -623,7 +629,12 @@ if __name__ == "__main__":
         population=population,
         operators=operators,
         evaluator=evaluator,
-        config=EvolutionConfig(max_generations=3, mutation_threshold=0.2, verbose=False),
+        config=EvolutionConfig(
+            max_generations=3,
+            mutation_threshold=0.2,
+            swap_mutation=True,
+            verbose=False,
+        ),
         rng=rng,
     )
     engine.run()
