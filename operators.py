@@ -264,15 +264,15 @@ class GeneticOperators:
         if rng is None:
             rng = np.random.default_rng()
         if len(memory.scalars):
-            factors = rng.uniform(0.5, 2.0, size=memory.scalars.shape)
+            factors = rng.uniform(0.0, 1.0, size=memory.scalars.shape)
             signs = np.where(rng.random(memory.scalars.shape) < 0.1, -1.0, 1.0)
             memory.scalars *= factors * signs
         if len(memory.vectors):
-            factors = rng.uniform(0.5, 2.0, size=memory.vectors.shape)
+            factors = rng.uniform(0.0, 1.0, size=memory.vectors.shape)
             signs = np.where(rng.random(memory.vectors.shape) < 0.1, -1.0, 1.0)
             memory.vectors *= factors * signs
         if len(memory.matrices):
-            factors = rng.uniform(0.5, 2.0, size=memory.matrices.shape)
+            factors = rng.uniform(0.0, 1.0, size=memory.matrices.shape)
             signs = np.where(rng.random(memory.matrices.shape) < 0.1, -1.0, 1.0)
             memory.matrices *= factors * signs
 
@@ -281,17 +281,17 @@ class GeneticOperators:
             rng = np.random.default_rng()
         
         if memory.scalars.size:
-            factors = rng.uniform(0.5, 2.0, size=memory.scalars.shape)
+            factors = rng.uniform(0.0, 1.0, size=memory.scalars.shape)
             factors[rng.random(memory.scalars.shape) < 0.1] *= -1
             memory.scalars *= factors
         
         if memory.vectors.size:
-            factors = rng.uniform(0.5, 2.0, size=memory.vectors.shape)
+            factors = rng.uniform(0.0, 1.0, size=memory.vectors.shape)
             factors[rng.random(memory.vectors.shape) < 0.1] *= -1
             memory.vectors *= factors
         
         if memory.matrices.size:
-            factors = rng.uniform(0.5, 2.0, size=memory.matrices.shape)
+            factors = rng.uniform(0.0, 1.0, size=memory.matrices.shape)
             factors[rng.random(memory.matrices.shape) < 0.1] *= -1
             memory.matrices *= factors
 
@@ -301,13 +301,13 @@ class GeneticOperators:
         dis1 = rng.uniform
         dis2 = rng.uniform
         for idx in range(len(memory.scalars)):
-            factor = dis1(0.5, 2.0)
+            factor = dis1(0.0, 1.0)
             memory.scalars[idx] *= factor
             if dis2(0.0, 1.0) <= 0.1:
                 memory.scalars[idx] *= -1
         for vec in memory.vectors:
             for j in range(len(vec)):
-                factor = dis1(0.5, 2.0)
+                factor = dis1(0.0, 1.0)
                 vec[j] *= factor
                 if dis2(0.0, 1.0) <= 0.1:
                     vec[j] *= -1
@@ -315,7 +315,7 @@ class GeneticOperators:
             rows, cols = mat.shape
             for r in range(rows):
                 for c in range(cols):
-                    factor = dis1(0.5, 2.0)
+                    factor = dis1(0.0, 1.0)
                     mat[r, c] *= factor
                     if dis2(0.0, 1.0) <= 0.1:
                         mat[r, c] *= -1
