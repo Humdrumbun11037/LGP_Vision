@@ -208,6 +208,7 @@ def get_protected_scalar_registers(config: Dict[str, Any]) -> List[int]:
 
     When ``adaptive_mutation_rates`` is enabled, registers
     ADAPTIVE_RATE_BASE_INDEX … ADAPTIVE_RATE_BASE_INDEX + N_ADAPTIVE_RATE_REGISTERS - 1
+    are protected so they act purely as evolvable constants.
 
     Returns an empty list when the feature is disabled.
     """
@@ -217,6 +218,44 @@ def get_protected_scalar_registers(config: Dict[str, Any]) -> List[int]:
 
     return list(range(ADAPTIVE_RATE_BASE_INDEX,
                       ADAPTIVE_RATE_BASE_INDEX + N_ADAPTIVE_RATE_REGISTERS))
+
+
+def get_modes_filter_length(config: Dict[str, Any], default: Optional[int] = None) -> int:
+    """Return the MODES persistence filter length from config.
+
+    Reads ``experiment.modes_filter_length`` from the YAML config.
+    Falls back to ``default`` if the key is absent or null.
+    If ``default`` is also None, falls back to the population size.
+
+    The Dolson et al. (2019) paper recommends setting filter_length equal to
+    the population size.  Using a small value such as the elitism count (e.g.
+    1) collapses the persistence window to a single generation, causing nearly
+    every individual to be classified as persistent and inflating all four
+    MODES metrics.
+
+    Args:
+        config: Full configuration dictionary.
+        default: Fallback value when the key is absent (typically pop size).
+
+    Returns:
+        A positive integer to use as MODESTracker filter_length.
+    """
+    exp_cfg = config.get('experiment', {})
+    value = exp_cfg.get('modes_filter_length')
+
+    if value is None or value == 'null':
+        if default is not None:
+            return int(default)
+        # Last-resort fallback: derive from population size
+        pop_size = config.get('population', {}).get('size', 100)
+        return int(pop_size)
+
+    value = int(value)
+    if value < 1:
+        raise ValueError(
+            f"experiment.modes_filter_length must be >= 1, got {value}"
+        )
+    return value
 
 
 def get_operations_config(config: Dict[str, Any]) -> Dict[str, bool]:

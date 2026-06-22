@@ -36,6 +36,7 @@ from config_loader import (
     get_operations_config,
     get_experiment_config,
     get_protected_scalar_registers,
+    get_modes_filter_length,  # NEW
 )
 
 
@@ -94,7 +95,7 @@ def main(config_path: str = "config.yaml", random_seed: Optional[int] = None):
         print(f"  Reg {protected_regs[0]}: micro_mutation rate")
         print(f"  Reg {protected_regs[1]}: add_instruction rate")
         print(f"  Reg {protected_regs[2]}: delete_instruction rate")
-        print(f"  Reg {protected_regs[3]}: crossover_threshold")
+        print(f"  Reg {protected_regs[3]}: swap_mutation rate")
     else:
         print("Adaptive mutation rates DISABLED — using fixed rates from config")
     
@@ -177,12 +178,19 @@ def main(config_path: str = "config.yaml", random_seed: Optional[int] = None):
         rng=rng,
     )
 
+    # FIX: use configurable filter_length (default = population size as paper recommends)
+    # Previously used pop_config.elitism which is far too small (e.g. 1),
+    # making the persistence window only 1 generation and inflating all MODES metrics.
+    modes_filter_length = get_modes_filter_length(config, default=pop_config.size)
+    print(f"\nMODES tracker filter_length: {modes_filter_length} "
+          f"(population size: {pop_config.size}, elitism: {pop_config.elitism})")
+
     print("\nStarting evolution...")
     print("=" * 60)
     
     start_time = time.time()
     modes_tracker = MODESTracker(
-        filter_length=pop_config.elitism,
+        filter_length=modes_filter_length,
         output_registers=getattr(evaluator, "output_registers", None),
     )
     final_population = engine.run(modes_tracker=modes_tracker)
