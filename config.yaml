@@ -60,20 +60,20 @@ evaluator:
 # Population Configuration
 # Settings for the evolutionary population
 population:
-  size: 500                # Population size
+  size: 100                # Population size
   program_length: [1, 15]     # Program length range [min, max]
-  elitism: 5               # Number of elite individuals to preserve
+  elitism: 1               # Number of elite individuals to preserve
   max_program_length: 64     # Maximum program length (null for no limit)
 
 # Evolution Configuration
 # Settings for the evolutionary algorithm
 evolution:
-  max_generations: 100       # Maximum number of generations
+  max_generations: 50       # Maximum number of generations
   mutation_threshold: 0.1     # Probability threshold for mutation (0.0-1.0)
   constant_mutation_rate: 0.1 # Probability of mutating constants (0.0-1.0)
   crossover_threshold: 0.9     # Probability threshold for crossover (0.0-1.0)
   verbose: true               # Print detailed progress information
-  swap_mutation: true
+  swap_mutation: false
   # Adaptive mutation rates: if true, scalar registers 1-4 (just after the output
   # register at index 0) encode evolved per-individual mutation rates [0, 1].
   # Register 1 = micro-mutation rate, 2 = add-instruction rate,
@@ -88,11 +88,11 @@ operations:
   use_feature_vector_ops: false  # 12 ops: 8 scalar + 4 vector (dot_product, mean, sum, norm)
                                 # Best for feature_vector strategy!
   use_minimal_scalar: false     # 8 scalar-only ops (simpler baseline)
-  use_minimal: false            # 28-op set (for quantized/full_image strategies)
+  use_minimal: true            # 28-op set (for quantized/full_image strategies)
   use_automl_no_random: false  # AutoML operations without constant/random/gaussian ops
                                 # (only if above are false, checked before use_automl)
-  use_automl: true              # Include AutoML operations (only if above are false)
-  use_cv: true                  # Include CV operations (only if above are false)
+  use_automl: false             # Include AutoML operations (only if above are false)
+  use_cv: false                  # Include CV operations (only if above are false)
 
 # Experiment Configuration
 # Unified output management - all outputs go under experiments/<run_id>/

@@ -197,6 +197,7 @@ def create_evolution_config(
         checkpoint_every=checkpoint_every,
         stats_log_path=stats_log_path,
         adaptive_mutation_rates=evo_cfg.get('adaptive_mutation_rates', False),
+        swap_mutation=evo_cfg.get('swap_mutation', False),
     )
 
 
@@ -207,8 +208,6 @@ def get_protected_scalar_registers(config: Dict[str, Any]) -> List[int]:
 
     When ``adaptive_mutation_rates`` is enabled, registers
     ADAPTIVE_RATE_BASE_INDEX … ADAPTIVE_RATE_BASE_INDEX + N_ADAPTIVE_RATE_REGISTERS - 1
-    are reserved for evolved per-individual mutation rates and must never be
-    overwritten by randomly generated instructions.
 
     Returns an empty list when the feature is disabled.
     """
