@@ -34,7 +34,7 @@ def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
     if not config_file.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
     
-    with open(config_file, 'r') as f:
+    with open(config_file, 'r', encoding='utf-8') as f:
         try:
             config = yaml.safe_load(f)
         except yaml.YAMLError as e:
