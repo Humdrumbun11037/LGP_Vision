@@ -170,55 +170,45 @@ def create_population_config(config: Dict[str, Any]) -> PopulationConfig:
     )
 
 
-def create_evolution_config(
-    config: Dict[str, Any],
-    manager: Optional['ExperimentManager'] = None,
-) -> EvolutionConfig:
-    """Create EvolutionConfig from YAML config."""
+
+def create_evolution_config(config, manager=None):
+    from evolution_engine import EvolutionConfig
+    from pathlib import Path
+ 
     evo_cfg = config.get('evolution', {})
     exp_cfg = config.get('experiment', {})
-    
+ 
     if manager is not None:
-        checkpoint_dir = str(manager.checkpoints_dir)
-        stats_log_path = str(manager.get_stats_csv_path())
+        checkpoint_dir   = str(manager.checkpoints_dir)
+        stats_log_path   = str(manager.get_stats_csv_path())
         checkpoint_every = manager.checkpoint_every
+        # Lifecycle log lives alongside the stats CSV in the run directory
+        lifecycle_log_path = (
+            str(manager.run_dir / "lifecycle.csv")
+            if exp_cfg.get('lifecycle_log', False)
+            else None
+        )
     else:
-        checkpoint_dir = None
-        stats_log_path = None
-        checkpoint_every = exp_cfg.get('checkpoint_every')
-    
+        checkpoint_dir     = None
+        stats_log_path     = None
+        checkpoint_every   = exp_cfg.get('checkpoint_every')
+        lifecycle_log_path = None
+ 
     return EvolutionConfig(
-        max_generations=evo_cfg.get('max_generations', 100),
-        mutation_threshold=evo_cfg.get('mutation_threshold', 0.1),
-        constant_mutation_rate=evo_cfg.get('constant_mutation_rate', 0.0),
-        crossover_threshold=evo_cfg.get('crossover_threshold', 0.9),
-        verbose=evo_cfg.get('verbose', True),
-        checkpoint_dir=checkpoint_dir,
-        checkpoint_every=checkpoint_every,
-        stats_log_path=stats_log_path,
-        adaptive_mutation_rates=evo_cfg.get('adaptive_mutation_rates', False),
-        swap_mutation=evo_cfg.get('swap_mutation', False),
+        max_generations        = evo_cfg.get('max_generations', 100),
+        mutation_threshold     = evo_cfg.get('mutation_threshold', 0.1),
+        constant_mutation_rate = evo_cfg.get('constant_mutation_rate', 0.0),
+        crossover_threshold    = evo_cfg.get('crossover_threshold', 0.9),
+        verbose                = evo_cfg.get('verbose', True),
+        checkpoint_dir         = checkpoint_dir,
+        checkpoint_every       = checkpoint_every,
+        stats_log_path         = stats_log_path,
+        adaptive_mutation_rates   = evo_cfg.get('adaptive_mutation_rates', False),
+        swap_mutation             = evo_cfg.get('swap_mutation', False),
+        zero_init_adaptive_rates  = evo_cfg.get('zero_init_adaptive_rates', False),
+        lifecycle_log_path        = lifecycle_log_path,
     )
-
-
-def get_protected_scalar_registers(config: Dict[str, Any]) -> List[int]:
-    """
-    Return the list of scalar destination register indices that must not be
-    written to during random instruction generation.
-
-    When ``adaptive_mutation_rates`` is enabled, registers
-    ADAPTIVE_RATE_BASE_INDEX … ADAPTIVE_RATE_BASE_INDEX + N_ADAPTIVE_RATE_REGISTERS - 1
-    are protected so they act purely as evolvable constants.
-
-    Returns an empty list when the feature is disabled.
-    """
-    evo_cfg = config.get('evolution', {})
-    if not evo_cfg.get('adaptive_mutation_rates', False):
-        return []
-
-    return list(range(ADAPTIVE_RATE_BASE_INDEX,
-                      ADAPTIVE_RATE_BASE_INDEX + N_ADAPTIVE_RATE_REGISTERS))
-
+ 
 
 def get_modes_filter_length(config: Dict[str, Any], default: Optional[int] = None) -> int:
     """Return the MODES persistence filter length from config.
@@ -271,25 +261,26 @@ def get_operations_config(config: Dict[str, Any]) -> Dict[str, bool]:
     }
 
 
-def get_experiment_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Get experiment configuration."""
+def get_experiment_config(config):
     exp_cfg = config.get('experiment', {})
-    
+ 
     name = exp_cfg.get('name')
     if name == 'null':
         name = None
-    
+ 
     keep_n = exp_cfg.get('keep_n_checkpoints')
     if keep_n == 'null':
         keep_n = None
-    
+ 
     checkpoint_every = exp_cfg.get('checkpoint_every')
     if checkpoint_every == 'null':
         checkpoint_every = None
-    
+ 
     return {
-        'name': name,
-        'base_dir': exp_cfg.get('base_dir', 'experiments'),
-        'checkpoint_every': checkpoint_every,
-        'keep_n_checkpoints': keep_n,
+        'name'               : name,
+        'base_dir'           : exp_cfg.get('base_dir', 'experiments'),
+        'checkpoint_every'   : checkpoint_every,
+        'keep_n_checkpoints' : keep_n,
+        # lifecycle_log is consumed by create_evolution_config, not ExperimentManager
     }
+ 

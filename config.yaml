@@ -20,7 +20,7 @@ memory:
 # Settings for the FlappyBird environment evaluator
 evaluator:
   env_id: "FlappyBird-v0"  # Gymnasium environment ID
-  episodes: 5          # Number of episodes per evaluation
+  episodes: 4          # Number of episodes per evaluation
   max_steps: 500           # Maximum steps per episode
   output_register: 0      # Scalar register to read action from
   action_repeat: 5        # Number of frames to repeat each action (1 = decision every frame, 5 = decision every 5 frames)
@@ -60,7 +60,7 @@ evaluator:
 # Population Configuration
 # Settings for the evolutionary population
 population:
-  size: 150                # Population size
+  size: 100                # Population size
   program_length: [1, 15]     # Program length range [min, max]
   elitism: 25               # Number of elite individuals to preserve
   max_program_length: 64     # Maximum program length (null for no limit)
@@ -68,10 +68,10 @@ population:
 # Evolution Configuration
 # Settings for the evolutionary algorithm
 evolution:
-  max_generations: 100       # Maximum number of generations
+  max_generations: 50       # Maximum number of generations
   mutation_threshold: 0.1     # Probability threshold for mutation (0.0-1.0)
                                # (used in fixed-rate mode only)
-  constant_mutation_rate: 0.1 # Probability of mutating constants (0.0-1.0)
+  constant_mutation_rate: 0.05 # Probability of mutating constants (0.0-1.0)
   crossover_threshold: 0.9     # Probability threshold for crossover (0.0-1.0)
                                # (always fixed — crossover is never adaptive)
   verbose: true               # Print detailed progress information
@@ -92,6 +92,7 @@ evolution:
   # generated instruction will write to them), so they start as random
   # evolvable constants shaped only by selection pressure.
   adaptive_mutation_rates: true
+  zero_init_adaptive_rates: true
 
 # Operations Configuration
 # Which operation sets to include (checked in order, first true wins)
@@ -118,6 +119,7 @@ experiment:
   # A small value (e.g. elitism count = 1) collapses the persistence window
   # to a single generation, making Change/Novelty/Ecology/Complexity metrics
   # unreliable.  Set to null to use the population size automatically.
-  modes_filter_length: 10     # null → use population size (recommended)
+  modes_filter_length: 5     # null → use population size (recommended)
   # modes_filter_length: 100    # explicit population-size value
   # modes_filter_length: 10     # shorter window if you want faster response
+  lifecycle_log: true

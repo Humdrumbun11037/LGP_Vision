@@ -263,62 +263,81 @@ class GeneticOperators:
     def mutate_constants(self, memory: MemoryBank, rng=None):
         if rng is None:
             rng = np.random.default_rng()
+
+    # Log-normal perturbation: factor ~ LogNormal(0, sigma)
+    # - Always positive, so registers never get zeroed out
+    # - Median factor = 1.0 (no systematic drift)
+    # - ~68% of factors fall in [e^-sigma, e^sigma]
+    # - Sign-flip is still applied independently with 10% probability
+        sigma = 0.5  # Controls mutation strength; tune as needed
+
         if len(memory.scalars):
-            factors = rng.uniform(0.0, 1.0, size=memory.scalars.shape)
+            factors = np.exp(rng.normal(0.0, sigma, size=memory.scalars.shape)).astype(np.float32)
             signs = np.where(rng.random(memory.scalars.shape) < 0.1, -1.0, 1.0)
             memory.scalars *= factors * signs
+
         if len(memory.vectors):
-            factors = rng.uniform(0.0, 1.0, size=memory.vectors.shape)
+            factors = np.exp(rng.normal(0.0, sigma, size=memory.vectors.shape)).astype(np.float32)
             signs = np.where(rng.random(memory.vectors.shape) < 0.1, -1.0, 1.0)
             memory.vectors *= factors * signs
+
         if len(memory.matrices):
-            factors = rng.uniform(0.0, 1.0, size=memory.matrices.shape)
+            factors = np.exp(rng.normal(0.0, sigma, size=memory.matrices.shape)).astype(np.float32)
             signs = np.where(rng.random(memory.matrices.shape) < 0.1, -1.0, 1.0)
             memory.matrices *= factors * signs
-
+            
     def mutate_constants_in_place(self, memory: MemoryBank, rng=None):
         if rng is None:
             rng = np.random.default_rng()
-        
+
+        sigma = 0.5
+
         if memory.scalars.size:
-            factors = rng.uniform(0.0, 1.0, size=memory.scalars.shape)
-            factors[rng.random(memory.scalars.shape) < 0.1] *= -1
+            factors = np.exp(rng.normal(0.0, sigma, size=memory.scalars.shape)).astype(np.float32)
+            sign_flips = rng.random(memory.scalars.shape) < 0.1
+            factors[sign_flips] *= -1.0
             memory.scalars *= factors
-        
+
         if memory.vectors.size:
-            factors = rng.uniform(0.0, 1.0, size=memory.vectors.shape)
-            factors[rng.random(memory.vectors.shape) < 0.1] *= -1
+            factors = np.exp(rng.normal(0.0, sigma, size=memory.vectors.shape)).astype(np.float32)
+            sign_flips = rng.random(memory.vectors.shape) < 0.1
+            factors[sign_flips] *= -1.0
             memory.vectors *= factors
-        
+
         if memory.matrices.size:
-            factors = rng.uniform(0.0, 1.0, size=memory.matrices.shape)
-            factors[rng.random(memory.matrices.shape) < 0.1] *= -1
+            factors = np.exp(rng.normal(0.0, sigma, size=memory.matrices.shape)).astype(np.float32)
+            sign_flips = rng.random(memory.matrices.shape) < 0.1
+            factors[sign_flips] *= -1.0
             memory.matrices *= factors
+
 
     def mutate_constants_naive(self, memory: MemoryBank, rng=None):
         if rng is None:
             rng = np.random.default_rng()
-        dis1 = rng.uniform
-        dis2 = rng.uniform
+
+        sigma = 0.5
+
         for idx in range(len(memory.scalars)):
-            factor = dis1(0.0, 1.0)
+            factor = np.exp(rng.normal(0.0, sigma))
+            if rng.random() < 0.1:
+                factor *= -1.0
             memory.scalars[idx] *= factor
-            if dis2(0.0, 1.0) <= 0.1:
-                memory.scalars[idx] *= -1
+
         for vec in memory.vectors:
             for j in range(len(vec)):
-                factor = dis1(0.0, 1.0)
+                factor = np.exp(rng.normal(0.0, sigma))
+                if rng.random() < 0.1:
+                    factor *= -1.0
                 vec[j] *= factor
-                if dis2(0.0, 1.0) <= 0.1:
-                    vec[j] *= -1
+
         for mat in memory.matrices:
             rows, cols = mat.shape
             for r in range(rows):
                 for c in range(cols):
-                    factor = dis1(0.0, 1.0)
+                    factor = np.exp(rng.normal(0.0, sigma))
+                    if rng.random() < 0.1:
+                        factor *= -1.0
                     mat[r, c] *= factor
-                    if dis2(0.0, 1.0) <= 0.1:
-                        mat[r, c] *= -1
 
     def crossover(self, parent1: Program, parent2: Program, threshold=0.9, rng=None):
         if rng is None:

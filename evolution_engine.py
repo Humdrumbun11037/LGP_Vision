@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 import pickle
 import csv
 from pathlib import Path
@@ -16,6 +16,9 @@ from population import Population
 from operators import GeneticOperators
 from evaluator import FitnessEvaluator
 
+if TYPE_CHECKING:
+    from lifecycle_logger import LifecycleLogger
+
 
 # ---------------------------------------------------------------------------
 # Number of adaptive mutation rate registers and their fixed offsets.
@@ -26,15 +29,17 @@ N_ADAPTIVE_RATE_REGISTERS = 4
 ADAPTIVE_RATE_BASE_INDEX = 1   # first register index (output reg is 0)
 
 # Semantic meaning of each adaptive rate register (for documentation / plots).
-# Register 4 encodes the swap-mutation rate (probability of swapping two
-# instructions).  Crossover is NOT adaptive — it always uses the global
-# config threshold so that its behaviour remains stable and comparable.
 ADAPTIVE_RATE_NAMES = [
     "micro_mutation",       # register 1
     "add_instruction",      # register 2
     "delete_instruction",   # register 3
     "swap_mutation",        # register 4
 ]
+
+# Value written to adaptive rate scalar registers at initialisation so that
+# sigmoid(ADAPTIVE_RATE_INIT_VALUE) ≈ 0.  sigmoid(-6) ≈ 0.0025.
+# Only used when zero_init_adaptive_rates=True in EvolutionConfig.
+ADAPTIVE_RATE_INIT_VALUE: float = -6.0
 
 
 def _read_adaptive_rates(individual) -> List[float]:
@@ -50,6 +55,18 @@ def _read_adaptive_rates(individual) -> List[float]:
         raw = float(individual.memory.read_scalar(idx))
         rates.append(float(expit(raw)))
     return rates
+
+
+def _zero_init_adaptive_registers(individual) -> None:
+    """Force adaptive rate registers to ADAPTIVE_RATE_INIT_VALUE.
+
+    sigmoid(ADAPTIVE_RATE_INIT_VALUE) ≈ 0, so all mutation rates start
+    effectively at zero and can only rise through selection pressure on the
+    constant_mutation_rate perturbations.
+    """
+    for offset in range(N_ADAPTIVE_RATE_REGISTERS):
+        idx = ADAPTIVE_RATE_BASE_INDEX + offset
+        individual.memory.write_scalar(idx, ADAPTIVE_RATE_INIT_VALUE)
 
 
 @dataclass
@@ -68,6 +85,14 @@ class EvolutionConfig:
     adaptive_mutation_rates: bool = False
     # Swap mutation: swap the positions of two random instructions
     swap_mutation: bool = False
+    # When True, all adaptive rate registers are forced to ADAPTIVE_RATE_INIT_VALUE
+    # (sigmoid ≈ 0) at population initialisation so every individual starts with
+    # mutation rates near zero.  constant_mutation_rate then acts as the sole
+    # driver of early variation, and rates can only rise via selection pressure.
+    zero_init_adaptive_rates: bool = False
+    # Path for per-individual lifecycle CSV (birth/death adaptive rates).
+    # Set automatically by ExperimentManager when lifecycle logging is enabled.
+    lifecycle_log_path: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.max_generations <= 0:
@@ -94,9 +119,6 @@ class BestAgentInfo:
 class AdaptiveRateStats:
     """Per-generation population statistics for each adaptive mutation rate."""
     generation: int
-    # Each field is a list of 4 values (one per rate), ordered by
-    # ADAPTIVE_RATE_NAMES: [micro_mutation, add_instruction,
-    #                        delete_instruction, swap_mutation]
     mean: List[float] = field(default_factory=lambda: [0.0] * N_ADAPTIVE_RATE_REGISTERS)
     std: List[float] = field(default_factory=lambda: [0.0] * N_ADAPTIVE_RATE_REGISTERS)
     min: List[float] = field(default_factory=lambda: [0.0] * N_ADAPTIVE_RATE_REGISTERS)
@@ -124,14 +146,86 @@ class EvolutionEngine:
         self.adaptive_rate_history: List[AdaptiveRateStats] = []
         self.best_fitness_ever: Optional[float] = None
         self._stats_file_path: Optional[Path] = None
+
+        # Lifecycle logger (lazily initialised)
+        self._lifecycle_logger: Optional['LifecycleLogger'] = None
+
         if self.config.stats_log_path is not None:
             self._init_stats_logging()
+
+        # ------------------------------------------------------------------
+        # Zero-initialise adaptive rate registers if requested.
+        # This must happen AFTER population.initialize_random() has been
+        # called externally, so we do it here in __init__ and also expose
+        # apply_zero_init() for cases where the population is re-created
+        # after engine construction.
+        # ------------------------------------------------------------------
+        if (self.config.adaptive_mutation_rates
+                and self.config.zero_init_adaptive_rates):
+            self.apply_zero_init()
+
+        # Open lifecycle logger if a path was specified
+        if self.config.lifecycle_log_path is not None:
+            self._open_lifecycle_logger(self.config.lifecycle_log_path)
+
+        # Record births for the initial population
+        if self._lifecycle_logger is not None:
+            for ind in self.population.individuals:
+                self._lifecycle_logger.record_birth(ind, generation=0)
+
+    # ------------------------------------------------------------------
+    # Zero-init helper (public so callers can re-apply after re-init)
+    # ------------------------------------------------------------------
+
+    def apply_zero_init(self) -> None:
+        """Force every individual's adaptive rate registers to near-zero.
+
+        sigmoid(ADAPTIVE_RATE_INIT_VALUE) ≈ 0.0025.
+        """
+        for ind in self.population.individuals:
+            _zero_init_adaptive_registers(ind)
+            ind.invalidate_fitness()
+
+        if self.config.verbose:
+            print(
+                f"[zero_init] Set adaptive rate registers to "
+                f"{ADAPTIVE_RATE_INIT_VALUE:.1f} "
+                f"(sigmoid ≈ {expit(ADAPTIVE_RATE_INIT_VALUE):.4f}) "
+                f"for all {len(self.population.individuals)} individuals."
+            )
+
+    # ------------------------------------------------------------------
+    # Lifecycle logger
+    # ------------------------------------------------------------------
+
+    def _open_lifecycle_logger(self, path: str) -> None:
+        from lifecycle_logger import LifecycleLogger
+        self._lifecycle_logger = LifecycleLogger(
+            path=path,
+            adaptive_rate_names=ADAPTIVE_RATE_NAMES,
+            adaptive_rate_base_index=ADAPTIVE_RATE_BASE_INDEX,
+        )
+        if self.config.verbose:
+            print(f"[lifecycle] Logging individual birth/death rates to: {path}")
+
+    def _close_lifecycle_logger(self) -> None:
+        if self._lifecycle_logger is not None:
+            self._lifecycle_logger.close()
+            self._lifecycle_logger = None
 
     # ------------------------------------------------------------------
     # Main evolution loop
     # ------------------------------------------------------------------
 
     def run(self, modes_tracker=None) -> Population:
+        try:
+            self._run_inner(modes_tracker)
+        finally:
+            # Always flush and close the lifecycle log, even on exception
+            self._close_lifecycle_logger()
+        return self.population
+
+    def _run_inner(self, modes_tracker=None) -> None:
         for gen in range(self.config.max_generations):
             # --- evaluate all ---
             n_jobs = self.evaluator.config.n_jobs
@@ -139,7 +233,7 @@ class EvolutionEngine:
 
             # Track best-ever Individual
             current_best = self.population.get_best()
-            
+
             if current_best.fitness is not None:
                 was_none = self.population.best_ever is None
                 if was_none or current_best.fitness > self.population.best_ever.fitness:
@@ -148,7 +242,7 @@ class EvolutionEngine:
                     if self.config.verbose:
                         action = "Initialized" if was_none else "Updated"
                         print(f"  → {action} best_ever (fitness: {current_best.fitness:.4f}, gen: {gen})")
-        
+
             self.population.record_statistics()
             self._record_best_agent(gen)
             if self.config.adaptive_mutation_rates:
@@ -173,16 +267,21 @@ class EvolutionEngine:
 
             if gen < self.config.max_generations - 1:
                 elites = self.population.get_elites()
+
+                # --- log deaths for individuals NOT in the elite set ---
+                if self._lifecycle_logger is not None:
+                    elite_ids = {e.id for e in elites}
+                    for ind in self.population.individuals:
+                        if ind.id not in elite_ids:
+                            self._lifecycle_logger.record_death(ind, gen)
+
                 offspring = elites
-                
+
                 while len(offspring) < self.population.config.size:
                     parent1, parent2 = self.population.tournament_selection(3, num_winners=2)
 
-                    # Crossover always uses the global config threshold — it is
-                    # NOT one of the adaptive mutation rate registers.
                     crossover_threshold = self.config.crossover_threshold
 
-                    # Determine per-parent structural mutation rates.
                     if self.config.adaptive_mutation_rates:
                         rates1 = _read_adaptive_rates(parent1)
                         rates2 = _read_adaptive_rates(parent2)
@@ -192,9 +291,6 @@ class EvolutionEngine:
                         micro_mut1 = micro_mut2 = self.config.mutation_threshold
                         add_rate1 = add_rate2 = self.config.mutation_threshold
                         del_rate1 = del_rate2 = self.config.mutation_threshold
-                        # Swap rate falls back to the global mutation_threshold when
-                        # adaptive rates are off; the swap_mutation toggle controls
-                        # whether the operator is used at all.
                         swap_rate1 = swap_rate2 = self.config.mutation_threshold
 
                     child_program_1, child_program_2 = self.operators.crossover(
@@ -225,25 +321,31 @@ class EvolutionEngine:
                             max_length=self.population.config.max_program_length,
                             swap_mutation=self.config.swap_mutation,
                         )
-                
+
                     if self.population.config.max_program_length is not None:
                         child_program_1.max_program_length = self.population.config.max_program_length
                         child_program_2.max_program_length = self.population.config.max_program_length
 
                     child1 = parent1.create_offspring(parent_ids=(parent1.id, parent2.id))
                     child1.program = child_program_1
-                    
+
                     child2 = parent2.create_offspring(parent_ids=(parent1.id, parent2.id))
                     child2.program = child_program_2
-                    
+
                     if self.config.constant_mutation_rate > 0 and (
                         self.rng.random() < self.config.constant_mutation_rate
                     ):
                         self.operators.mutate_constants(child1.memory, self.rng)
                         self.operators.mutate_constants(child2.memory, self.rng)
-                        
+
                     child1.invalidate_fitness()
                     child2.invalidate_fitness()
+
+                    # --- log births for new offspring ---
+                    if self._lifecycle_logger is not None:
+                        self._lifecycle_logger.record_birth(child1, gen + 1)
+                        self._lifecycle_logger.record_birth(child2, gen + 1)
+
                     offspring.append(child1)
                     offspring.append(child2)
 
@@ -252,7 +354,6 @@ class EvolutionEngine:
 
         if self.config.verbose:
             print("\nEvolution complete.")
-        return self.population
 
     # ------------------------------------------------------------------
     # Adaptive mutation helpers
@@ -267,32 +368,18 @@ class EvolutionEngine:
         swap_rate: float,
         max_length: Optional[int],
     ) -> None:
-        """
-        Apply mutation operators using per-individual adaptive rates.
-
-        Crossover is handled before this call and is NOT adaptive.
-
-        Mutation probabilities per instruction:
-          - micro_mut_rate  → apply micro-mutation
-          - add_rate        → insert a new random instruction after current position
-          - del_rate        → delete the current instruction
-          - swap_rate       → swap current instruction with another random one
-                             (only applied when config.swap_mutation is True)
-        """
         rng = self.rng
 
-        # --- micro-mutation pass ---
         for instr in list(program.instructions):
             if rng.random() < micro_mut_rate:
                 self.operators.micro_mutate(instr, rng)
 
-        # --- structural mutation pass (add / delete / swap) ---
         i = 0
         while i < len(program.instructions):
             if rng.random() < add_rate:
                 if max_length is None or len(program.instructions) < max_length:
                     self.operators.add_instruction_mutate(program, i, rng)
-                    i += 1  # skip newly inserted instruction
+                    i += 1
             if i < len(program.instructions) and rng.random() < del_rate:
                 self.operators.delete_instruction_mutate(program, i)
                 i -= 1
@@ -314,11 +401,10 @@ class EvolutionEngine:
     # ------------------------------------------------------------------
 
     def _record_adaptive_rate_stats(self, generation: int) -> None:
-        """Collect population-wide statistics for each adaptive rate register."""
         all_rates = np.array(
             [_read_adaptive_rates(ind) for ind in self.population.individuals],
             dtype=np.float64,
-        )  # shape: (pop_size, 4)
+        )
 
         best_agent = self.population.get_best()
         best_rates = _read_adaptive_rates(best_agent) if best_agent is not None else [0.0] * 4
@@ -334,12 +420,11 @@ class EvolutionEngine:
         self.adaptive_rate_history.append(stats)
 
     def _record_best_agent(self, generation: int) -> None:
-        """Record information about the best agent in the current generation."""
         best_agent = self.population.get_best()
-        
+
         if best_agent.fitness is None:
             return
-        
+
         output_registers = getattr(self.evaluator, "output_registers", None)
         if output_registers is None:
             effective_length = len(best_agent.program)
@@ -348,7 +433,7 @@ class EvolutionEngine:
             effective_length = best_agent.get_effective_length(output_registers)
             total_length = len(best_agent.program)
             effective_code_rate = effective_length / total_length if total_length > 0 else 0.0
-        
+
         adaptive_rates = None
         if self.config.adaptive_mutation_rates:
             adaptive_rates = _read_adaptive_rates(best_agent)
@@ -362,7 +447,7 @@ class EvolutionEngine:
             adaptive_rates=adaptive_rates,
         )
         self.best_agent_history.append(info)
-        
+
         if self.config.verbose:
             rate_str = ""
             if adaptive_rates is not None:
@@ -374,19 +459,18 @@ class EvolutionEngine:
             print(f"Best agent: fitness={info.fitness:.4f}, "
                   f"effective_code_rate={info.effective_code_rate:.3f} "
                   f"({info.effective_length}/{info.total_length}){rate_str}")
-    
+
     # ------------------------------------------------------------------
     # CSV statistics logging
     # ------------------------------------------------------------------
 
     def _init_stats_logging(self) -> None:
-        """Initialize CSV statistics logging file with headers."""
         if self.config.stats_log_path is None:
             return
-        
+
         self._stats_file_path = Path(self.config.stats_log_path)
         self._stats_file_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         adaptive_cols = []
         if self.config.adaptive_mutation_rates:
             for name in ADAPTIVE_RATE_NAMES:
@@ -414,33 +498,32 @@ class EvolutionEngine:
                     'best_ever_fitness',
                     'best_ever_generation',
                 ] + adaptive_cols)
-            
+
             if self.config.verbose:
                 print(f"Statistics logging: {self._stats_file_path}")
         except Exception as e:
             if self.config.verbose:
                 print(f"Warning: Failed to initialize statistics logging: {e}")
             self._stats_file_path = None
-    
+
     def _log_generation_stats(self, generation: int) -> None:
-        """Log statistics for the current generation to CSV file."""
         if self._stats_file_path is None:
             return
-        
+
         try:
             min_fitness, mean_fitness, max_fitness, std_fitness = self.population.compute_statistics()
-            
+
             best_agent = self.population.get_best()
             if best_agent.fitness is None:
                 return
-            
+
             best_info = None
             if len(self.best_agent_history) > 0:
                 for info in reversed(self.best_agent_history):
                     if info.generation == generation:
                         best_info = info
                         break
-            
+
             if best_info is None:
                 output_registers = getattr(self.evaluator, "output_registers", None)
                 if output_registers is None:
@@ -455,18 +538,18 @@ class EvolutionEngine:
                 effective_code_rate = best_info.effective_code_rate
                 best_total_length = best_info.total_length
                 effective_length = best_info.effective_length
-            
+
             diversity = self.population.get_diversity_metrics()
             mean_program_length = diversity['mean_length']
             std_program_length = diversity['std_length']
-            
+
             best_ever_fitness = (
-                self.population.best_ever.fitness 
+                self.population.best_ever.fitness
                 if self.population.best_ever is not None and self.population.best_ever.fitness is not None
                 else None
             )
             best_ever_generation = (
-                self.population.best_ever_generation 
+                self.population.best_ever_generation
                 if self.population.best_ever is not None
                 else None
             )
@@ -480,7 +563,7 @@ class EvolutionEngine:
                         rate_stats.std[i],
                         rate_stats.best[i],
                     ]
-            
+
             with open(self._stats_file_path, 'a', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow([
@@ -501,7 +584,7 @@ class EvolutionEngine:
         except Exception as e:
             if self.config.verbose:
                 print(f"Warning: Failed to log generation statistics: {e}")
-    
+
     # ------------------------------------------------------------------
     # Checkpointing
     # ------------------------------------------------------------------
@@ -509,35 +592,35 @@ class EvolutionEngine:
     def _check_and_save_checkpoint(self, generation: int) -> None:
         if self.config.checkpoint_dir is None:
             return
-        
+
         best_agent = self.population.get_best()
         if best_agent.fitness is None:
             return
-        
+
         should_save = False
-        
+
         if self.config.checkpoint_every is not None:
             if generation % self.config.checkpoint_every == 0:
                 should_save = True
-        
+
         is_improvement = (
-            self.best_fitness_ever is None or 
+            self.best_fitness_ever is None or
             best_agent.fitness > self.best_fitness_ever
         )
         if is_improvement:
             self.best_fitness_ever = best_agent.fitness
             should_save = True
-        
+
         if should_save:
             self._save_checkpoint(generation, best_agent.fitness)
-    
+
     def _save_checkpoint(self, generation: int, fitness: float) -> None:
         checkpoint_dir = Path(self.config.checkpoint_dir)
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        
+
         filename = f"gen_{generation:04d}.pkl"
         checkpoint_path = checkpoint_dir / filename
-        
+
         checkpoint_data = {
             'generation': generation,
             'fitness': fitness,
@@ -546,11 +629,11 @@ class EvolutionEngine:
             'adaptive_rate_history': self.adaptive_rate_history,
             'config': self.config,
         }
-        
+
         try:
             with open(checkpoint_path, 'wb') as f:
                 pickle.dump(checkpoint_data, f)
-            
+
             latest_path = checkpoint_dir / "latest.pkl"
             if latest_path.exists() or latest_path.is_symlink():
                 latest_path.unlink()
@@ -559,22 +642,22 @@ class EvolutionEngine:
             except OSError:
                 import shutil
                 shutil.copy2(checkpoint_path, latest_path)
-            
+
             if self.config.verbose:
                 print(f"Checkpoint saved: gen={generation}, fitness={fitness:.4f} -> {checkpoint_path}")
         except Exception as e:
             if self.config.verbose:
                 print(f"Warning: Failed to save checkpoint: {e}")
-    
+
     @staticmethod
     def load_checkpoint(checkpoint_path: str) -> dict:
         checkpoint_path = Path(checkpoint_path)
         if not checkpoint_path.exists():
             raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
-        
+
         with open(checkpoint_path, 'rb') as f:
             checkpoint_data = pickle.load(f)
-        
+
         return checkpoint_data
 
 
@@ -617,7 +700,7 @@ if __name__ == "__main__":
     population.initialize_random(mutate_constants=True)
 
     from evaluator import BaseEvaluatorConfig
-    
+
     class DummyEvaluator(FitnessEvaluator):
         def _evaluate_episode(self, individual, episode_idx):
             return self.rng.normal()
@@ -633,9 +716,18 @@ if __name__ == "__main__":
             max_generations=3,
             mutation_threshold=0.2,
             swap_mutation=True,
-            verbose=False,
+            adaptive_mutation_rates=True,
+            zero_init_adaptive_rates=True,
+            constant_mutation_rate=0.05,
+            verbose=True,
+            lifecycle_log_path="/tmp/test_lifecycle.csv",
         ),
         rng=rng,
     )
     engine.run()
     population.print_summary()
+
+    import pandas as pd
+    df = pd.read_csv("/tmp/test_lifecycle.csv")
+    print("\nLifecycle log sample:")
+    print(df.to_string())
