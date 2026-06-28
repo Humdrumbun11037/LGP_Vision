@@ -1,0 +1,24 @@
+{
+  "run_id": "run_20260626_114915_quantized_frame_stack_2_1000_seed626",
+  "start_time": "2026-06-26T11:49:15.535454",
+  "end_time": null,
+  "status": "running",
+  "config_summary": {
+    "random_seed": 626,
+    "population_size": 500,
+    "program_length": [
+      1,
+      15
+    ],
+    "elitism": 25,
+    "max_generations": 150,
+    "mutation_threshold": 0.1,
+    "crossover_threshold": 0.9,
+    "patch_strategy": "trinary",
+    "episodes": 5,
+    "max_steps": 500,
+    "n_jobs": 8,
+    "operation_set": "minimal"
+  },
+  "results": null
+}

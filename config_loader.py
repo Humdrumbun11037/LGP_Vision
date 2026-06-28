@@ -284,3 +284,19 @@ def get_experiment_config(config):
         # lifecycle_log is consumed by create_evolution_config, not ExperimentManager
     }
  
+def get_protected_scalar_registers(config: Dict[str, Any]) -> List[int]:
+    """Return scalar register indices that should be protected from random writes.
+    
+    When adaptive_mutation_rates is enabled, registers 1-4 (immediately after
+    the output register at index 0) are reserved for evolved mutation rates and
+    must not be overwritten by randomly generated instructions.
+    
+    Returns an empty list when adaptive mutation rates are disabled.
+    """
+    evo_cfg = config.get('evolution', {})
+    if evo_cfg.get('adaptive_mutation_rates', False):
+        return list(range(
+            ADAPTIVE_RATE_BASE_INDEX,
+            ADAPTIVE_RATE_BASE_INDEX + N_ADAPTIVE_RATE_REGISTERS
+        ))
+    return []
