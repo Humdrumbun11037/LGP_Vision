@@ -399,11 +399,6 @@ def create_adaptive_rate_chart(engine) -> Optional[plt.Figure]:
         mean_arr = np.array(mean_vals)
         std_arr  = np.array(std_vals)
 
-        # Population range band (min–max)
-        ax.fill_between(
-            generations, min_vals, max_vals,
-            alpha=0.15, color=colour, label='Pop min–max',
-        )
         # Mean ± 1 std band
         ax.fill_between(
             generations,

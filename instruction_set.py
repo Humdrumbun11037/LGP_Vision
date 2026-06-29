@@ -67,6 +67,13 @@ class InstructionSet:
             MemoryType.VECTOR: list(range(0, self.n_vector)),
             MemoryType.MATRIX: list(range(0, self.n_matrix)),
         }
+
+        # Unrestricted ranges include ALL registers (used after generation 0)
+        self._unrestricted_dest_ranges = {
+            MemoryType.SCALAR: all_scalar_dests,
+            MemoryType.VECTOR: list(range(0, self.n_vector)),
+            MemoryType.MATRIX: list(range(0, self.n_matrix)),
+        }
     
     def _get_available_obs_types(self) -> List[MemoryType]:
         """Return list of observation types that have at least one register."""
@@ -120,82 +127,61 @@ class InstructionSet:
         else:  # MATRIX
             return int(rng.integers(0, max(1, self.n_obs_matrix)))
     
-    def generate_random_instruction(self, rng=None) -> Instruction:
-        """
-        Generate a random type-safe instruction.
-        
-        Destination scalar registers listed in ``_protected_scalar_dests`` are
-        never chosen as a destination, so the adaptive mutation rate registers
-        remain intact during random program generation.
-        
-        Args:
-            rng: numpy random generator (optional)
-        
-        Returns:
-            Valid Instruction with properly configured observation access
-        """
+    def generate_random_instruction(self, rng=None, restricted: bool = False) -> Instruction:
         if rng is None:
             rng = np.random.default_rng()
-        
-        # Pick random operation
+
         op = rng.choice(self.operations)
-        
-        # Pick source registers based on operation's input types
         source_types = op.input_types()
         source_indices = []
         source_obs_flags = []
         source_obs_register_types = []
         source_obs_register_indices = []
-        
+
         for src_type in source_types:
-            # Decide observation flag (50% probability, but only if obs registers exist)
             obs_flag = rng.random() < 0.5 and len(self._available_obs_types) > 0
             source_obs_flags.append(obs_flag)
-            
-            # Always generate large range index (used as element index for obs, or register index for working)
             source_indices.append(self.get_random_source(src_type, rng))
-            
-            # Generate observation register type and index
+
             if obs_flag:
-                obs_reg_type = self._choose_obs_register_type(src_type, rng) # gets a valid observation type 
-                obs_reg_idx = self._get_random_obs_register_index(obs_reg_type, rng) # gets a valid type 
+                obs_reg_type = self._choose_obs_register_type(src_type, rng)
+                obs_reg_idx = self._get_random_obs_register_index(obs_reg_type, rng)
             else:
-                # Placeholder values (not used when obs_flag=False)
                 obs_reg_type = MemoryType.SCALAR
                 obs_reg_idx = 0
-            
+
             source_obs_register_types.append(obs_reg_type)
             source_obs_register_indices.append(obs_reg_idx)
-        
-        # Pick destination register (working registers only, respecting protections)
+
         dest_type = op.output_type()
-        dest_index = rng.choice(self._dest_ranges[dest_type])
-        
+        # restricted=True only during initial population generation
+        dest_index = self.get_random_dest(dest_type, rng, restricted=restricted)
+
         return Instruction(
-            op, dest_type, dest_index, 
+            op, dest_type, dest_index,
             source_types, source_indices, source_obs_flags,
             source_obs_register_types, source_obs_register_indices
         )
-    
-    def generate_random_program(self, length: int, rng=None):
-        """Generate a random program of given length"""
+        
+    def generate_random_program(self, length: int, rng=None, restricted: bool = False):
         instructions = [
-            self.generate_random_instruction(rng) 
+            self.generate_random_instruction(rng, restricted=restricted)
             for _ in range(length)
         ]
-        return Program(instructions)  
+        return Program(instructions)
 
     def get_random_operator(self, rng= None):
         if rng is None:
             rng = np.random.default_rng()
         return rng.choice(self.operations)
 
-    def get_random_dest(self, dest_type, rng=None):
+    def get_random_dest(self, dest_type, rng=None, restricted: bool = False):
         if rng is None:
             rng = np.random.default_rng()
-        dest_index = rng.choice(self._dest_ranges[dest_type])
+        ranges = self._dest_ranges if restricted else self._unrestricted_dest_ranges
+        dest_index = rng.choice(ranges[dest_type])
         return dest_index
-
+    
     def get_random_source(self, source_type, rng=None):
         """
         Generate a random source index in large range.

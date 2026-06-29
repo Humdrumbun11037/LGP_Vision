@@ -113,9 +113,12 @@ class Individual:
         rng: Optional[np.random.Generator] = None,
         mutate_constants: bool = True,
         max_program_length: Optional[int] = None,
+        restricted: bool = False,   # ← new
     ) -> 'Individual':
         rng = rng or np.random.default_rng()
-        program = instruction_set.generate_random_program(program_length, rng)
+        program = instruction_set.generate_random_program(
+            program_length, rng, restricted=restricted   # ← pass through
+        )
         if max_program_length is not None:
             program.max_program_length = max_program_length
         memory = MemoryBank(
@@ -130,7 +133,7 @@ class Individual:
             init_scalar_range=memory_config.init_scalar_range,
             init_vector_range=memory_config.init_vector_range,
             init_matrix_range=memory_config.init_matrix_range,
-            rng=rng,  # Pass RNG for reproducible memory initialization
+            rng=rng,
         )
         if mutate_constants:
             GeneticOperators(instruction_set, rng).mutate_constants(memory, rng)

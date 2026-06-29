@@ -155,10 +155,8 @@ class Population:
         if lo == hi:
             return lo
         return int(self.rng.integers(lo, hi + 1))
-
+    
     def initialize_random(self, mutate_constants: bool = True) -> None:
-        """Populate with random individuals."""
-
         individuals: List[Individual] = []
         for _ in range(self.config.size):
             ind = Individual.random(
@@ -168,6 +166,7 @@ class Population:
                 rng=self.rng,
                 mutate_constants=mutate_constants,
                 max_program_length=self.config.max_program_length,
+                restricted=True,   # ← only here: protect adaptive rate regs at init
             )
             if self.config.max_program_length is not None:
                 ind.program.max_program_length = self.config.max_program_length
@@ -176,7 +175,6 @@ class Population:
         self.generation = 0
         self.best_ever = None
         self.best_ever_generation = 0
-
     # ------------------------------------------------------------------
     # Selection
 

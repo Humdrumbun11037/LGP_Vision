@@ -57,7 +57,7 @@ class GeneticOperators:
             instruction.operation = new_op
             instruction.dest_type = new_op.output_type()
             instruction.dest_index = self.instruction_set.get_random_dest(
-                instruction.dest_type, generator
+                instruction.dest_type, generator, restricted=False
             )
             instruction.source_types = new_op.input_types()
             
@@ -94,7 +94,7 @@ class GeneticOperators:
         elif mutation == 1:
             # Mutate only the destination index (keeping type intact).
             instruction.dest_index = self.instruction_set.get_random_dest(
-                instruction.dest_type, generator
+                instruction.dest_type, generator, restricted = False
             )
         elif mutation == 2:
             # Mutate one of the source element indices, if any exist.
@@ -131,13 +131,12 @@ class GeneticOperators:
 
         return instruction
 
-    def macro_mutate(self, instruction: Instruction, rng=None):
+    def macro_mutate(self, instruction, rng=None):
         """Return a brand new random instruction (macro mutation)."""
         if rng is None:
             rng = np.random.default_rng()
-        instruction = self.instruction_set.generate_random_instruction(rng)
-        return instruction
-
+        return self.instruction_set.generate_random_instruction(rng, restricted=False)
+        
     def add_instruction_mutate(self, program, index, rng=None):
         """Insert a new instruction right after the supplied index."""
         if rng is None:

@@ -247,8 +247,6 @@ class EvolutionStatsDisplay:
             max_vals  = [s.max[i]  for s in history]
             best_vals = [s.best[i] for s in history]
 
-            ax.fill_between(generations, min_vals, max_vals,
-                            alpha=0.15, color=colour, label='Pop min–max')
             ax.fill_between(generations,
                             np.clip(mean_vals - std_vals, 0, 1),
                             np.clip(mean_vals + std_vals, 0, 1),
